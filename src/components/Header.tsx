@@ -8,6 +8,7 @@ interface HeaderProps {
   activeTab: 'calendar' | 'dashboard' | 'guide';
   onTabChange: (tab: 'calendar' | 'dashboard' | 'guide') => void;
   onOpenMilestones: () => void;
+  onOpenSeasons: () => void;
   onOpenExcel: () => void;
   onOpenNotifications: () => void;
 }
@@ -16,6 +17,7 @@ export default function Header({
   activeTab,
   onTabChange,
   onOpenMilestones,
+  onOpenSeasons,
   onOpenExcel,
   onOpenNotifications,
 }: HeaderProps) {
@@ -77,6 +79,12 @@ export default function Header({
 
       {/* Action buttons */}
       <div className="flex items-center gap-2 ml-6">
+        <button
+          onClick={onOpenSeasons}
+          className="text-xs text-gray-400 hover:text-white px-3 py-1.5 rounded border border-gray-700 hover:border-gray-500 transition-colors"
+        >
+          Season
+        </button>
         <button
           onClick={onOpenMilestones}
           className="text-xs text-gray-400 hover:text-white px-3 py-1.5 rounded border border-gray-700 hover:border-gray-500 transition-colors"

@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { useGTMStore } from '@/store/gtmStore';
-import { Milestone } from '@/lib/types';
+import { Milestone, getSeasonStyle } from '@/lib/types';
 
 // 마일스톤 템플릿 (선택 시 자동 차수 부여)
 const MILESTONE_TEMPLATES = [
@@ -30,15 +30,16 @@ interface MilestoneEditorProps {
 }
 
 export default function MilestoneEditor({ isOpen, onClose }: MilestoneEditorProps) {
-  const { milestones, addMilestone, updateMilestone, deleteMilestone, currentUser } = useGTMStore();
+  const { milestones, seasons, addMilestone, updateMilestone, deleteMilestone, currentUser } = useGTMStore();
+  const sortedSeasons = useMemo(() => [...seasons].sort((a, b) => a.order - b.order), [seasons]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ name: '', startDate: '', endDate: '', color: '' });
-  const [filterSeason, setFilterSeason] = useState<'all' | '27SS' | '26FW'>('all');
+  const [filterSeason, setFilterSeason] = useState<string>('all');
   const [showAddForm, setShowAddForm] = useState(false);
 
   // 신규 등록 폼
   const [addForm, setAddForm] = useState({
-    season: '26FW' as '27SS' | '26FW',
+    season: sortedSeasons[0]?.id || '',
     template: '',
     customName: '',
     startDate: '',
@@ -46,17 +47,23 @@ export default function MilestoneEditor({ isOpen, onClose }: MilestoneEditorProp
     color: DEFAULT_COLORS[0],
   });
 
+  const seasonOrder = useMemo(() => {
+    const map: Record<string, number> = {};
+    sortedSeasons.forEach((s, i) => { map[s.id] = i; });
+    return map;
+  }, [sortedSeasons]);
+
   const filtered = useMemo(() => {
     return milestones
       .filter((m) => filterSeason === 'all' || m.season === filterSeason)
       .sort((a, b) => {
-        if (a.season !== b.season) return a.season === '26FW' ? -1 : 1;
+        if (a.season !== b.season) return (seasonOrder[a.season] ?? 0) - (seasonOrder[b.season] ?? 0);
         return a.order - b.order;
       });
-  }, [milestones, filterSeason]);
+  }, [milestones, filterSeason, seasonOrder]);
 
   // 동일 시즌 동일 템플릿의 차수를 계산
-  const getAutoName = (season: '27SS' | '26FW', templateName: string): string => {
+  const getAutoName = (season: string, templateName: string): string => {
     if (!templateName) return '';
     // 해당 시즌에서 동일 기본명을 가진 마일스톤 개수 확인
     const baseName = templateName.replace(/\s*\(\d+차\)\s*$/, '').trim();
@@ -84,7 +91,7 @@ export default function MilestoneEditor({ isOpen, onClose }: MilestoneEditorProp
   };
 
   // 시즌 변경 시 자동 이름 재계산
-  const handleSeasonChange = (season: '27SS' | '26FW') => {
+  const handleSeasonChange = (season: string) => {
     const autoName = addForm.template ? getAutoName(season, addForm.template) : addForm.customName;
     setAddForm({ ...addForm, season, customName: autoName });
   };
@@ -190,8 +197,9 @@ export default function MilestoneEditor({ isOpen, onClose }: MilestoneEditorProp
               className="text-xs border border-gray-300 rounded px-2 py-1 text-gray-700"
             >
               <option value="all">전체 시즌</option>
-              <option value="26FW">26FW</option>
-              <option value="27SS">27SS</option>
+              {sortedSeasons.map((s) => (
+                <option key={s.id} value={s.id}>{s.id}</option>
+              ))}
             </select>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">
               &times;
@@ -209,11 +217,12 @@ export default function MilestoneEditor({ isOpen, onClose }: MilestoneEditorProp
                 <label className="block text-[11px] text-gray-500 mb-1">시즌</label>
                 <select
                   value={addForm.season}
-                  onChange={(e) => handleSeasonChange(e.target.value as '27SS' | '26FW')}
+                  onChange={(e) => handleSeasonChange(e.target.value)}
                   className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs text-gray-900"
                 >
-                  <option value="26FW">26FW</option>
-                  <option value="27SS">27SS</option>
+                  {sortedSeasons.map((s) => (
+                    <option key={s.id} value={s.id}>{s.id}</option>
+                  ))}
                 </select>
               </div>
 
@@ -293,9 +302,7 @@ export default function MilestoneEditor({ isOpen, onClose }: MilestoneEditorProp
             {/* 미리보기 */}
             {addForm.customName && addForm.startDate && addForm.endDate && (
               <div className="mt-3 flex items-center gap-3 text-xs text-gray-600 bg-white px-3 py-2 rounded border border-gray-200">
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                  addForm.season === '27SS' ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'
-                }`}>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${getSeasonStyle(addForm.season).badgeBg} ${getSeasonStyle(addForm.season).badgeText}`}>
                   {addForm.season}
                 </span>
                 <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: addForm.color }} />
@@ -335,9 +342,7 @@ export default function MilestoneEditor({ isOpen, onClose }: MilestoneEditorProp
                 return (
                   <tr key={m.id} className={`border-b border-gray-100 ${isEditing ? 'bg-blue-50/50' : 'hover:bg-gray-50'}`}>
                     <td className="px-4 py-2">
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                        m.season === '27SS' ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'
-                      }`}>
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${getSeasonStyle(m.season).badgeBg} ${getSeasonStyle(m.season).badgeText}`}>
                         {m.season}
                       </span>
                     </td>

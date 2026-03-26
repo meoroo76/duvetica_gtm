@@ -8,6 +8,7 @@ import Dashboard from './Dashboard';
 import UserGuide from './UserGuide';
 import LoginModal from './LoginModal';
 import MilestoneEditor from './MilestoneEditor';
+import SeasonManager from './SeasonManager';
 import ExcelManager from './ExcelManager';
 import NotificationPanel from './NotificationPanel';
 
@@ -16,6 +17,7 @@ export default function AppShell() {
   const [activeTab, setActiveTab] = useState<'calendar' | 'dashboard' | 'guide'>('calendar');
   const [showLogin, setShowLogin] = useState(false);
   const [showMilestones, setShowMilestones] = useState(false);
+  const [showSeasons, setShowSeasons] = useState(false);
   const [showExcel, setShowExcel] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [hydrated, setHydrated] = useState(false);
@@ -44,6 +46,7 @@ export default function AppShell() {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         onOpenMilestones={() => setShowMilestones(true)}
+        onOpenSeasons={() => setShowSeasons(true)}
         onOpenExcel={() => setShowExcel(true)}
         onOpenNotifications={() => setShowNotifications(true)}
       />
@@ -71,6 +74,7 @@ export default function AppShell() {
       {/* Modals */}
       {showLogin && !currentUser && <LoginModal />}
       <MilestoneEditor isOpen={showMilestones} onClose={() => setShowMilestones(false)} />
+      <SeasonManager isOpen={showSeasons} onClose={() => setShowSeasons(false)} />
       <ExcelManager isOpen={showExcel} onClose={() => setShowExcel(false)} />
       <NotificationPanel isOpen={showNotifications} onClose={() => setShowNotifications(false)} />
     </div>

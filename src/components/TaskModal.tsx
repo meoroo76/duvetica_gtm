@@ -1,14 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Task, Department, DEPARTMENTS, STATUS_LABELS } from '@/lib/types';
+import { Task, Department, DEPARTMENTS, STATUS_LABELS, getSeasonStyle } from '@/lib/types';
 import { useGTMStore } from '@/store/gtmStore';
 
 interface TaskModalProps {
   isOpen: boolean;
   onClose: () => void;
   date: string;
-  season: '27SS' | '26FW';
+  season: string;
   department: Department;
   existingTask?: Task;
 }
@@ -91,9 +91,7 @@ export default function TaskModal({
 
         <div className="text-sm text-gray-500 mb-4 flex gap-3">
           <span className="px-2 py-1 bg-gray-100 rounded font-medium">{date}</span>
-          <span className={`px-2 py-1 rounded font-medium ${
-            season === '27SS' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'
-          }`}>
+          <span className={`px-2 py-1 rounded font-medium ${getSeasonStyle(season).badgeBg} ${getSeasonStyle(season).badgeText}`}>
             {season}
           </span>
         </div>

@@ -111,7 +111,7 @@ export default function ExcelManager({ isOpen, onClose }: ExcelManagerProps) {
         const rows = XLSX.utils.sheet_to_json<Record<string, string>>(ws);
 
         const parsed: Task[] = rows.map((row) => {
-          const season = (row['시즌'] || '26FW') as '27SS' | '26FW';
+          const season = row['시즌'] || '26FW';
           const dept = (row['부서'] || '기획') as Department;
           const statusMap: Record<string, Task['status']> = {
             '예정': 'pending', '진행중': 'in_progress', '완료': 'completed', '지연': 'delayed',

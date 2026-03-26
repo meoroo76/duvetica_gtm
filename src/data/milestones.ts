@@ -1,4 +1,71 @@
-import { Milestone } from '@/lib/types';
+import { Milestone, Season } from '@/lib/types';
+
+// 마일스톤 템플릿 (새 시즌 생성 시 사용)
+export const MILESTONE_TEMPLATE = [
+  { name: 'KICK-OFF', color: '#EF4444', durationDays: 1 },
+  { name: 'Category Strategy Report', color: '#F97316', durationDays: 12 },
+  { name: 'Fabric Development', color: '#F59E0B', durationDays: 19 },
+  { name: 'CAD Report', color: '#84CC16', durationDays: 12 },
+  { name: '1st Sample PLM', color: '#22C55E', durationDays: 12 },
+  { name: '1st Sample Lead Time', color: '#14B8A6', durationDays: 42 },
+  { name: '1st Convention', color: '#06B6D4', durationDays: 2 },
+  { name: '2nd Sample PLM', color: '#3B82F6', durationDays: 17 },
+  { name: '2nd Sample Lead Time', color: '#6366F1', durationDays: 49 },
+  { name: '2nd Convention', color: '#8B5CF6', durationDays: 2 },
+  { name: 'OTB Fix', color: '#A855F7', durationDays: 12 },
+  { name: 'PR / PLM 완료', color: '#EC4899', durationDays: 5 },
+  { name: 'PO 발행', color: '#F43F5E', durationDays: 5 },
+];
+
+function addDaysToDate(dateStr: string, days: number): string {
+  const d = new Date(dateStr);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+export function generateMilestonesForSeason(seasonId: string, kickoffDate: string): Milestone[] {
+  const milestones: Milestone[] = [];
+  let currentDate = kickoffDate;
+
+  for (let i = 0; i < MILESTONE_TEMPLATE.length; i++) {
+    const tmpl = MILESTONE_TEMPLATE[i];
+    const endDate = addDaysToDate(currentDate, tmpl.durationDays - 1);
+    milestones.push({
+      id: `${seasonId.toLowerCase()}-${tmpl.name.toLowerCase().replace(/[\s\/]+/g, '-')}`,
+      name: tmpl.name,
+      season: seasonId,
+      startDate: currentDate,
+      endDate,
+      color: tmpl.color,
+      order: i,
+    });
+    currentDate = addDaysToDate(endDate, 1);
+  }
+
+  return milestones;
+}
+
+// 기본 시즌 정의
+export const DEFAULT_SEASONS: Season[] = [
+  {
+    id: '26FW',
+    year: 2026,
+    type: 'FW',
+    startDate: '2025-05-16',
+    endDate: '2026-01-05',
+    order: 0,
+    color: '#F97316',
+  },
+  {
+    id: '27SS',
+    year: 2027,
+    type: 'SS',
+    startDate: '2025-10-13',
+    endDate: '2026-05-29',
+    order: 1,
+    color: '#3B82F6',
+  },
+];
 
 export const DEFAULT_MILESTONES: Milestone[] = [
   // === 26FW Season ===

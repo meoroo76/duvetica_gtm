@@ -4,7 +4,7 @@ import { Milestone } from '@/lib/types';
 
 interface MilestoneBarProps {
   milestones: Milestone[];
-  season: '27SS' | '26FW';
+  season: string;
   dates: string[];
 }
 

@@ -1,7 +1,17 @@
+export interface Season {
+  id: string;        // e.g., '27SS', '27FW', '28SS'
+  year: number;      // e.g., 2027
+  type: 'SS' | 'FW';
+  startDate: string; // 시즌 시작일 YYYY-MM-DD
+  endDate: string;   // 시즌 종료일 YYYY-MM-DD
+  order: number;     // 정렬 순서
+  color: string;     // 시즌 테마 색상
+}
+
 export interface Task {
   id: string;
   date: string; // YYYY-MM-DD
-  season: '27SS' | '26FW';
+  season: string;
   department: Department;
   content: string;
   milestone?: string;
@@ -15,7 +25,7 @@ export type Department = '기획' | '디자인' | '소재' | '소싱';
 export interface Milestone {
   id: string;
   name: string;
-  season: '27SS' | '26FW';
+  season: string;
   startDate: string;
   endDate: string;
   color: string;
@@ -49,3 +59,19 @@ export const STATUS_LABELS: Record<Task['status'], string> = {
   completed: '완료',
   delayed: '지연',
 };
+
+// 기본 시즌 색상 팔레트
+export const SEASON_COLORS: Record<string, { bg: string; text: string; border: string; color: string }> = {
+  SS: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', color: '#3B82F6' },
+  FW: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', color: '#F97316' },
+};
+
+export function getSeasonStyle(seasonId: string): { bg: string; text: string; border: string; badgeBg: string; badgeText: string; color: string } {
+  const type = seasonId.endsWith('FW') ? 'FW' : 'SS';
+  const base = SEASON_COLORS[type];
+  return {
+    ...base,
+    badgeBg: type === 'FW' ? 'bg-orange-100' : 'bg-blue-100',
+    badgeText: type === 'FW' ? 'text-orange-600' : 'text-blue-600',
+  };
+}

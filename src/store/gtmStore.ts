@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { Task, Milestone, User, Department } from '@/lib/types';
-import { DEFAULT_MILESTONES } from '@/data/milestones';
+import { Task, Milestone, User, Department, Season } from '@/lib/types';
+import { DEFAULT_MILESTONES, DEFAULT_SEASONS, generateMilestonesForSeason } from '@/data/milestones';
 import { INITIAL_TASKS } from '@/data/initialTasks';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -20,6 +20,7 @@ const PASSWORDS: Record<string, string> = {
 interface GTMState {
   tasks: Task[];
   milestones: Milestone[];
+  seasons: Season[];
   currentUser: User | null;
   initialized: boolean;
   dataVersion?: number;
@@ -34,13 +35,18 @@ interface GTMState {
   addTask: (task: Omit<Task, 'id' | 'createdBy' | 'updatedAt'>) => void;
   updateTask: (id: string, updates: Partial<Task>) => void;
   deleteTask: (id: string) => void;
-  getTasksForDateAndDept: (date: string, season: '27SS' | '26FW', dept: Department) => Task[];
+  getTasksForDateAndDept: (date: string, season: string, dept: Department) => Task[];
 
   // Milestones
   addMilestone: (milestone: Omit<Milestone, 'id'>) => void;
   updateMilestone: (id: string, updates: Partial<Milestone>) => void;
   deleteMilestone: (id: string) => void;
-  getMilestoneForDate: (date: string, season: '27SS' | '26FW') => Milestone | undefined;
+  getMilestoneForDate: (date: string, season: string) => Milestone | undefined;
+
+  // Seasons
+  addSeason: (season: Season) => void;
+  updateSeason: (id: string, updates: Partial<Season>) => void;
+  deleteSeason: (id: string) => void;
 
   // Server sync
   syncToServer: () => Promise<void>;
@@ -65,6 +71,7 @@ export const useGTMStore = create<GTMState>()(
     (set, get) => ({
       tasks: [],
       milestones: [],
+      seasons: [],
       currentUser: null,
       initialized: false,
       syncing: false,
@@ -156,6 +163,39 @@ export const useGTMStore = create<GTMState>()(
         scheduleSyncToServer();
       },
 
+      // Season CRUD
+      addSeason: (season) => {
+        const user = get().currentUser;
+        if (!user) return;
+        // 시즌 추가 + 기본 마일스톤 자동 생성
+        const newMilestones = generateMilestonesForSeason(season.id, season.startDate);
+        set((state) => ({
+          seasons: [...state.seasons, season].sort((a, b) => a.order - b.order),
+          milestones: [...state.milestones, ...newMilestones],
+        }));
+        scheduleSyncToServer();
+      },
+
+      updateSeason: (id, updates) => {
+        const user = get().currentUser;
+        if (!user) return;
+        set((state) => ({
+          seasons: state.seasons.map((s) => (s.id === id ? { ...s, ...updates } : s)),
+        }));
+        scheduleSyncToServer();
+      },
+
+      deleteSeason: (id) => {
+        const user = get().currentUser;
+        if (!user) return;
+        set((state) => ({
+          seasons: state.seasons.filter((s) => s.id !== id),
+          milestones: state.milestones.filter((m) => m.season !== id),
+          tasks: state.tasks.filter((t) => t.season !== id),
+        }));
+        scheduleSyncToServer();
+      },
+
       // 서버에 데이터 저장
       syncToServer: async () => {
         const state = get();
@@ -172,6 +212,7 @@ export const useGTMStore = create<GTMState>()(
             body: JSON.stringify({
               tasks: state.tasks,
               milestones: state.milestones,
+              seasons: state.seasons,
               dataVersion: state.dataVersion,
             }),
           });
@@ -201,6 +242,7 @@ export const useGTMStore = create<GTMState>()(
             set({
               tasks: data.tasks,
               milestones: data.milestones || DEFAULT_MILESTONES,
+              seasons: data.seasons || DEFAULT_SEASONS,
               dataVersion: data.dataVersion,
               initialized: true,
               lastSyncedAt: new Date().toISOString(),
@@ -208,6 +250,7 @@ export const useGTMStore = create<GTMState>()(
           } else if (data.milestones && data.milestones.length > 0) {
             set({
               milestones: data.milestones,
+              seasons: data.seasons || DEFAULT_SEASONS,
               dataVersion: data.dataVersion,
               initialized: true,
               lastSyncedAt: new Date().toISOString(),
@@ -220,12 +263,13 @@ export const useGTMStore = create<GTMState>()(
       },
 
       initializeData: () => {
-        const DATA_VERSION = 3;
+        const DATA_VERSION = 4;
         const current = get();
         if (!current.initialized || current.dataVersion !== DATA_VERSION) {
           set({
             tasks: INITIAL_TASKS,
             milestones: DEFAULT_MILESTONES,
+            seasons: DEFAULT_SEASONS,
             initialized: true,
             dataVersion: DATA_VERSION,
           });
@@ -239,6 +283,7 @@ export const useGTMStore = create<GTMState>()(
       partialize: (state) => ({
         tasks: state.tasks,
         milestones: state.milestones,
+        seasons: state.seasons,
         currentUser: state.currentUser,
         initialized: state.initialized,
         dataVersion: state.dataVersion,
