@@ -154,11 +154,11 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
     const allEnds = seasons.map((s) => s.endDate).sort();
     const start = new Date(allStarts[0]);
     start.setDate(1);
-    const end = new Date(allEnds[allEnds.length - 1]);
-    end.setMonth(end.getMonth() + 1);
-    end.setDate(0);
+    // 시즌 종료일이 속한 년도의 12월 31일까지 표시
+    const lastEnd = new Date(allEnds[allEnds.length - 1]);
+    const endYear = lastEnd.getFullYear();
     const startStr = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-01`;
-    const endStr = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
+    const endStr = `${endYear}-12-31`;
     return generateDateRange(startStr, endStr);
   }, [seasons, comparisonRef]);
 
