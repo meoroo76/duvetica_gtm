@@ -16,10 +16,14 @@ This project uses **Next.js 16.2.1** which has breaking changes from earlier ver
 npm run dev      # Dev server at http://localhost:3000
 npm run build    # Production build
 npm start        # Run production server
-npm run lint     # ESLint with Next.js rules
+npm run lint     # ESLint (v9 flat config in eslint.config.mjs)
 ```
 
-No test framework is configured.
+Playwright E2E tests are configured:
+```bash
+npm run test:e2e    # Run Playwright tests (headless)
+npm run test:e2e:ui # Run with Playwright UI
+```
 
 ## Architecture
 
@@ -42,13 +46,23 @@ No test framework is configured.
 **Data Model:**
 - **Season** — product season (e.g., 26FW, 27SS) with date range and color
 - **Milestone** — 13 pre-defined phase timelines per season (color-coded bars)
-- **Task** — work item with date, season, department, status (pending/in_progress/completed/delayed)
+- **Task** — work item with date, season, department, status (pending/in_progress/completed/delayed). Supports optional `endDate` + `barColor` for period schedules (date-range tasks shown as colored cell backgrounds)
 - **Department** — 4 fixed teams: 기획, 디자인, 소재, 소싱
 
 **External integrations:**
 - `xlsx` + `file-saver` for Excel import/export (ExcelManager.tsx)
 - Vercel KV for optional server persistence
 - Deployed on Vercel (project: duvetica-gtm)
+
+**Period Schedules (기간 일정):**
+- Task with `endDate` + `barColor` spans multiple dates as colored cell background
+- Multiple overlapping periods render as horizontal stripes (1/N height each)
+- Created via [+] button on department column headers → PeriodScheduleModal
+- Excluded from Ctrl+C/X/V clipboard and drag operations
+
+**Entry point flow:** `app/page.tsx` → `AppShell` (tab-based routing) → CalendarGrid / Dashboard / other views
+
+**Authentication:** Hardcoded credentials in `gtmStore.ts` (admin/planner/manager) — development-level only, no external auth provider.
 
 ## Style & Conventions
 

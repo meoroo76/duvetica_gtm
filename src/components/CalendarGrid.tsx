@@ -11,6 +11,7 @@ import {
   isHoliday,
 } from '@/lib/dateUtils';
 import TaskModal from './TaskModal';
+import PeriodScheduleModal from './PeriodScheduleModal';
 
 const ROW_HEIGHT = 32;
 const VISIBLE_BUFFER = 20;
@@ -54,6 +55,12 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
   const [modalSeason, setModalSeason] = useState<string>('');
   const [modalDept, setModalDept] = useState<Department>('기획');
   const [editingTask, setEditingTask] = useState<Task | undefined>();
+
+  // Period schedule modal state
+  const [periodModalOpen, setPeriodModalOpen] = useState(false);
+  const [periodModalSeason, setPeriodModalSeason] = useState<string>('');
+  const [periodModalDept, setPeriodModalDept] = useState<Department>('기획');
+  const [editingPeriodTask, setEditingPeriodTask] = useState<Task | undefined>();
 
   // Filter state - 최신 시즌이 좌측으로
   const sortedSeasons = useMemo(() => [...seasons].sort((a, b) => b.order - a.order), [seasons]);
@@ -103,48 +110,55 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
     }
   }, [searchOpen]);
 
+  // 키보드 단축키용 ref (최신 값 참조를 위해)
+  const selectedCellRef = useRef(selectedCell);
+  const clipboardRef = useRef(clipboard);
+  const tasksRef = useRef(tasks);
+  selectedCellRef.current = selectedCell;
+  clipboardRef.current = clipboard;
+  tasksRef.current = tasks;
+
   // 키보드 단축키: Ctrl+C 복사, Ctrl+X 잘라내기, Ctrl+V 붙여넣기
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!currentUser || searchOpen || modalOpen) return;
+      if (!currentUser || searchOpen || modalOpen || periodModalOpen) return;
       if (!e.ctrlKey && !e.metaKey) return;
+      const cell = selectedCellRef.current;
+      if (!cell) return;
 
-      if (e.key === 'c' && selectedCell) {
+      if (e.key === 'c') {
         e.preventDefault();
-        const found = tasks.find(
-          (t) => t.date === selectedCell.date && t.season === selectedCell.season && t.department === selectedCell.dept
+        const found = tasksRef.current.find(
+          (t) => t.date === cell.date && t.season === cell.season && t.department === cell.dept && !t.endDate
         );
-        if (found) setClipboard({ task: found, mode: 'copy' });
-      }
-
-      if (e.key === 'x' && selectedCell) {
+        if (found) setClipboard({ task: { ...found }, mode: 'copy' });
+      } else if (e.key === 'x') {
         e.preventDefault();
-        const found = tasks.find(
-          (t) => t.date === selectedCell.date && t.season === selectedCell.season && t.department === selectedCell.dept
+        const found = tasksRef.current.find(
+          (t) => t.date === cell.date && t.season === cell.season && t.department === cell.dept && !t.endDate
         );
-        if (found) setClipboard({ task: found, mode: 'cut' });
-      }
-
-      if (e.key === 'v' && selectedCell && clipboard) {
+        if (found) setClipboard({ task: { ...found }, mode: 'cut' });
+      } else if (e.key === 'v') {
+        const cb = clipboardRef.current;
+        if (!cb) return;
         e.preventDefault();
-        const { task, mode } = clipboard;
         addTask({
-          date: selectedCell.date,
-          season: selectedCell.season,
-          department: selectedCell.dept,
-          content: task.content,
-          status: task.status,
-          milestone: task.milestone,
+          date: cell.date,
+          season: cell.season,
+          department: cell.dept,
+          content: cb.task.content,
+          status: cb.task.status,
+          milestone: cb.task.milestone,
         });
-        if (mode === 'cut') {
-          deleteTask(task.id);
+        if (cb.mode === 'cut') {
+          deleteTask(cb.task.id);
           setClipboard(null);
         }
       }
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [currentUser, selectedCell, clipboard, searchOpen, modalOpen, tasks, addTask, deleteTask]);
+  }, [currentUser, searchOpen, modalOpen, periodModalOpen, addTask, deleteTask]);
 
   // seasonIds가 변경되면 (시즌 추가/삭제) 선택 상태 동기화
   useEffect(() => {
@@ -209,13 +223,24 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
     return generateDateRange(startStr, endStr);
   }, [seasons, comparisonRef]);
 
-  // Build task lookup map
+  // Build task lookup map (기간 태스크는 date~endDate 범위의 모든 날짜에 삽입)
   const taskMap = useMemo(() => {
     const map = new Map<string, Task[]>();
     for (const task of tasks) {
-      const key = `${task.date}_${task.season}_${task.department}`;
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(task);
+      if (task.endDate && task.endDate > task.date) {
+        // 기간 태스크: 모든 날짜에 삽입
+        const dates = generateDateRange(task.date, task.endDate);
+        for (const d of dates) {
+          const key = `${d}_${task.season}_${task.department}`;
+          if (!map.has(key)) map.set(key, []);
+          map.get(key)!.push(task);
+        }
+      } else {
+        // 단일 날짜 태스크
+        const key = `${task.date}_${task.season}_${task.department}`;
+        if (!map.has(key)) map.set(key, []);
+        map.get(key)!.push(task);
+      }
     }
     return map;
   }, [tasks]);
@@ -254,6 +279,14 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
     setModalDept(dept);
     setEditingTask(task);
     setModalOpen(true);
+  };
+
+  const openPeriodModal = (season: string, dept: Department, task?: Task) => {
+    if (!currentUser) return;
+    setPeriodModalSeason(season);
+    setPeriodModalDept(dept);
+    setEditingPeriodTask(task);
+    setPeriodModalOpen(true);
   };
 
   // --- Drag and Drop handlers ---
@@ -316,12 +349,26 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
     const key = `${date}_${season}_${dept}`;
     const cellTasks = taskMap.get(key) || [];
 
-    const filteredTasks = cellTasks.filter((t) => {
+    // 기간 태스크와 일반 태스크 분리
+    const periodTasks = cellTasks.filter((t) => t.endDate && t.barColor);
+    const regularTasks = cellTasks.filter((t) => !t.endDate);
+
+    const filteredRegular = regularTasks.filter((t) => {
       if (filterStatus !== 'all' && t.status !== filterStatus) return false;
       const term = searchTerms[searchKey(season, dept)];
       if (term && !t.content.toLowerCase().includes(term.toLowerCase())) return false;
       return true;
     });
+
+    // 검색 시 기간 태스크도 필터링
+    const filteredPeriod = periodTasks.filter((t) => {
+      const term = searchTerms[searchKey(season, dept)];
+      if (term && !t.content.toLowerCase().includes(term.toLowerCase())) return false;
+      return true;
+    });
+
+    // 기간 태스크 중복 제거 (같은 id가 여러 날짜에 나타남)
+    const uniquePeriod = filteredPeriod.filter((t, i, arr) => arr.findIndex((x) => x.id === t.id) === i);
 
     const milestone = milestones.find(
       (m) => m.season === season && date >= m.startDate && date <= m.endDate
@@ -332,15 +379,18 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
     const isSelected = selectedCell?.date === date && selectedCell?.season === season && selectedCell?.dept === dept;
     const isCutSource = clipboard?.mode === 'cut' && clipboard.task && cellTasks.some((t) => t.id === clipboard.task.id);
 
+    const hasPeriod = uniquePeriod.length > 0;
+
     return (
       <div
         key={key}
-        className={`border-b border-r border-gray-100 px-1 flex items-center cursor-pointer hover:bg-blue-50/50 transition-colors group relative ${
+        data-testid={`cell-${date}-${season}-${dept}`}
+        className={`border-b border-r border-gray-100 cursor-pointer hover:bg-blue-50/50 transition-colors group relative ${
           isDropHere ? 'ring-2 ring-blue-400 ring-inset bg-blue-50' : ''
         } ${isSelected ? 'ring-2 ring-gray-900 ring-inset' : ''}`}
         style={{
           height: ROW_HEIGHT,
-          backgroundColor: isDropHere ? '#DBEAFE' : milestone ? `${milestone.color}06` : undefined,
+          backgroundColor: isDropHere ? '#DBEAFE' : (!hasPeriod && milestone) ? `${milestone.color}06` : undefined,
         }}
         onClick={(e) => {
           if (isDragging) return;
@@ -349,8 +399,10 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
         }}
         onDoubleClick={() => {
           if (isDragging) return;
-          if (filteredTasks.length >= 1) {
-            openModal(date, season, dept, filteredTasks[0]);
+          if (filteredRegular.length >= 1) {
+            openModal(date, season, dept, filteredRegular[0]);
+          } else if (uniquePeriod.length > 0 && filteredRegular.length === 0) {
+            openPeriodModal(season, dept, uniquePeriod[0]);
           } else {
             openModal(date, season, dept);
           }
@@ -359,39 +411,63 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
         onDragLeave={handleDragLeave}
         onDrop={(e) => handleDrop(e, date, season, dept)}
       >
-        {filteredTasks.map((task, i) => (
-          <div
-            key={task.id}
-            draggable={!!currentUser}
-            onDragStart={(e) => {
-              e.stopPropagation();
-              handleDragStart(e, task, date, season, dept);
-            }}
-            onDragEnd={handleDragEnd}
-            className={`flex items-center gap-1 text-[11px] leading-tight truncate ${
-              currentUser ? 'cursor-grab active:cursor-grabbing' : ''
-            } ${dragState?.task.id === task.id || (isCutSource && clipboard?.task.id === task.id) ? 'opacity-40' : ''}`}
-            title={`${task.content}${currentUser ? ' (더블클릭: 수정 / 드래그: 이동 / Ctrl+드래그: 복사)' : ''}`}
-          >
-            <span
-              className="w-1.5 h-1.5 rounded-full shrink-0"
-              style={{ backgroundColor: STATUS_COLORS[task.status] }}
-            />
-            <span className="truncate text-gray-700">
-              {filteredTasks.length > 1 && i === 0
-                ? `${task.content} (+${filteredTasks.length - 1})`
-                : task.content}
-            </span>
+        {/* 기간 태스크 배경 스트라이프 */}
+        {hasPeriod && (
+          <div className="absolute inset-0 flex flex-col">
+            {uniquePeriod.map((pt) => (
+              <div
+                key={pt.id}
+                className="cursor-pointer"
+                style={{
+                  flex: 1,
+                  backgroundColor: pt.barColor,
+                  opacity: 0.3,
+                }}
+                title={`${pt.content} (${pt.date} ~ ${pt.endDate})`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openPeriodModal(season, dept, pt);
+                }}
+              />
+            ))}
           </div>
-        ))}
-        {filteredTasks.length === 0 && currentUser && !isDragging && (
-          <span className="text-gray-300 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">
-            더블클릭
-          </span>
         )}
-        {filteredTasks.length === 0 && isDropHere && (
-          <span className="text-blue-400 text-[10px]">여기에 놓기</span>
-        )}
+        {/* 일반 태스크 콘텐츠 */}
+        <div className="relative z-10 flex items-center px-1 h-full">
+          {filteredRegular.map((task, i) => (
+            <div
+              key={task.id}
+              draggable={!!currentUser}
+              onDragStart={(e) => {
+                e.stopPropagation();
+                handleDragStart(e, task, date, season, dept);
+              }}
+              onDragEnd={handleDragEnd}
+              className={`flex items-center gap-1 text-[11px] leading-tight truncate ${
+                currentUser ? 'cursor-grab active:cursor-grabbing' : ''
+              } ${dragState?.task.id === task.id || (isCutSource && clipboard?.task.id === task.id) ? 'opacity-40' : ''}`}
+              title={`${task.content}${currentUser ? ' (더블클릭: 수정 / 드래그: 이동 / Ctrl+드래그: 복사)' : ''}`}
+            >
+              <span
+                className="w-1.5 h-1.5 rounded-full shrink-0"
+                style={{ backgroundColor: STATUS_COLORS[task.status] }}
+              />
+              <span className="truncate text-gray-700">
+                {filteredRegular.length > 1 && i === 0
+                  ? `${task.content} (+${filteredRegular.length - 1})`
+                  : task.content}
+              </span>
+            </div>
+          ))}
+          {filteredRegular.length === 0 && !hasPeriod && currentUser && !isDragging && (
+            <span className="text-gray-300 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">
+              더블클릭
+            </span>
+          )}
+          {filteredRegular.length === 0 && isDropHere && (
+            <span className="text-blue-400 text-[10px]">여기에 놓기</span>
+          )}
+        </div>
       </div>
     );
   };
@@ -621,7 +697,7 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
         )}
 
         {clipboard && (
-          <div className="ml-2 text-[10px] text-purple-700 bg-purple-50 px-2 py-0.5 rounded flex items-center gap-1">
+          <div data-testid="clipboard-indicator" className="ml-2 text-[10px] text-purple-700 bg-purple-50 px-2 py-0.5 rounded flex items-center gap-1">
             {clipboard.mode === 'copy' ? '복사됨' : '잘라냄'}: &quot;{clipboard.task.content}&quot;
             <button
               onClick={() => setClipboard(null)}
@@ -722,15 +798,29 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
                           </button>
                         </div>
                       ) : (
-                        <button
-                          onClick={() => toggleSearch(sk)}
-                          className={`w-full text-center text-[11px] font-semibold py-1 transition-colors hover:bg-gray-100 ${hasSearch ? 'underline underline-offset-2' : ''}`}
-                          style={{ color: DEPARTMENT_COLORS[d] }}
-                          title={`${seasonId} ${d} 검색 필터 열기`}
-                        >
-                          {d}
-                          {hasSearch && <span className="ml-0.5 text-[9px] opacity-60">*</span>}
-                        </button>
+                        <div className="flex items-center justify-center group/dept">
+                          <button
+                            onClick={() => toggleSearch(sk)}
+                            className={`text-center text-[11px] font-semibold py-1 transition-colors hover:bg-gray-100 flex-1 ${hasSearch ? 'underline underline-offset-2' : ''}`}
+                            style={{ color: DEPARTMENT_COLORS[d] }}
+                            title={`${seasonId} ${d} 검색 필터 열기`}
+                          >
+                            {d}
+                            {hasSearch && <span className="ml-0.5 text-[9px] opacity-60">*</span>}
+                          </button>
+                          {currentUser && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openPeriodModal(seasonId, d);
+                              }}
+                              className="text-[10px] text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded px-1 py-0.5 opacity-0 group-hover/dept:opacity-100 transition-opacity shrink-0"
+                              title={`${seasonId} ${d} 기간 일정 추가`}
+                            >
+                              +
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   );
@@ -871,6 +961,16 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
         season={modalSeason}
         department={modalDept}
         existingTask={editingTask}
+      />
+      <PeriodScheduleModal
+        isOpen={periodModalOpen}
+        onClose={() => {
+          setPeriodModalOpen(false);
+          setEditingPeriodTask(undefined);
+        }}
+        season={periodModalSeason}
+        department={periodModalDept}
+        existingTask={editingPeriodTask}
       />
     </div>
   );

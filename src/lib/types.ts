@@ -18,6 +18,8 @@ export interface Task {
   status: 'pending' | 'in_progress' | 'completed' | 'delayed';
   createdBy: string;
   updatedAt: string;
+  endDate?: string;   // YYYY-MM-DD, 설정 시 기간 태스크
+  barColor?: string;  // 기간 태스크 셀 배경색 (hex)
 }
 
 export type Department = '기획' | '디자인' | '소재' | '소싱';
@@ -59,6 +61,13 @@ export const STATUS_LABELS: Record<Task['status'], string> = {
   completed: '완료',
   delayed: '지연',
 };
+
+// 기간 일정 색상 팔레트
+export const PERIOD_COLORS: string[] = [
+  '#3B82F6', '#EF4444', '#10B981', '#F59E0B',
+  '#8B5CF6', '#EC4899', '#06B6D4', '#F97316',
+  '#6366F1', '#14B8A6',
+];
 
 // 기본 시즌 색상 팔레트
 export const SEASON_COLORS: Record<string, { bg: string; text: string; border: string; color: string }> = {

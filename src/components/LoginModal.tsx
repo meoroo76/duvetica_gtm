@@ -56,6 +56,7 @@ export default function LoginModal({ onClose }: LoginModalProps) {
               아이디
             </label>
             <input
+              data-testid="login-username"
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -68,6 +69,7 @@ export default function LoginModal({ onClose }: LoginModalProps) {
               비밀번호
             </label>
             <input
+              data-testid="login-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -78,6 +80,7 @@ export default function LoginModal({ onClose }: LoginModalProps) {
         </div>
 
         <button
+          data-testid="login-submit"
           type="submit"
           className="w-full mt-6 bg-gray-900 text-white py-2.5 rounded-lg font-medium hover:bg-gray-800 transition-colors"
         >

@@ -59,6 +59,7 @@ export default function AppShell() {
             읽기 전용 모드입니다. 일정을 수정하려면 로그인하세요.
           </span>
           <button
+            data-testid="open-login-btn"
             onClick={() => setShowLogin(true)}
             className="text-xs bg-amber-600 text-white px-3 py-1 rounded hover:bg-amber-700"
           >
