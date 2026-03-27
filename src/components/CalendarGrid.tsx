@@ -61,42 +61,43 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
   const [filterDept, setFilterDept] = useState<'all' | Department>('all');
   const [filterStatus, setFilterStatus] = useState<'all' | Task['status']>('all');
 
-  // 부서별 검색어 필터
-  const [deptSearchTerms, setDeptSearchTerms] = useState<Partial<Record<Department, string>>>({});
-  const [deptSearchOpen, setDeptSearchOpen] = useState<Department | null>(null);
-  const deptSearchInputRef = useRef<HTMLInputElement>(null);
+  // 시즌+부서별 검색어 필터 (키: "seasonId_dept")
+  const [searchTerms, setSearchTerms] = useState<Record<string, string>>({});
+  const [searchOpen, setSearchOpen] = useState<string | null>(null); // "seasonId_dept" or null
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const setDeptSearch = useCallback((dept: Department, term: string) => {
-    setDeptSearchTerms((prev) => {
+  const searchKey = (seasonId: string, dept: Department) => `${seasonId}_${dept}`;
+
+  const setSearch = useCallback((key: string, term: string) => {
+    setSearchTerms((prev) => {
       if (!term) {
         const next = { ...prev };
-        delete next[dept];
+        delete next[key];
         return next;
       }
-      return { ...prev, [dept]: term };
+      return { ...prev, [key]: term };
     });
   }, []);
 
-  const toggleDeptSearch = useCallback((dept: Department) => {
-    setDeptSearchOpen((prev) => {
-      if (prev === dept) {
-        // 닫을 때 검색어 초기화
-        setDeptSearchTerms((t) => {
+  const toggleSearch = useCallback((key: string) => {
+    setSearchOpen((prev) => {
+      if (prev === key) {
+        setSearchTerms((t) => {
           const next = { ...t };
-          delete next[dept];
+          delete next[key];
           return next;
         });
         return null;
       }
-      return dept;
+      return key;
     });
   }, []);
 
   useEffect(() => {
-    if (deptSearchOpen && deptSearchInputRef.current) {
-      deptSearchInputRef.current.focus();
+    if (searchOpen && searchInputRef.current) {
+      searchInputRef.current.focus();
     }
-  }, [deptSearchOpen]);
+  }, [searchOpen]);
 
   // seasonIds가 변경되면 (시즌 추가/삭제) 선택 상태 동기화
   useEffect(() => {
@@ -173,7 +174,7 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
   }, [tasks]);
 
   // 검색어 활성 여부
-  const hasAnySearch = Object.keys(deptSearchTerms).length > 0;
+  const hasAnySearch = Object.keys(searchTerms).length > 0;
 
   // Scroll to today on mount
   useEffect(() => {
@@ -257,8 +258,8 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
 
     const filteredTasks = cellTasks.filter((t) => {
       if (filterStatus !== 'all' && t.status !== filterStatus) return false;
-      const searchTerm = deptSearchTerms[dept];
-      if (searchTerm && !t.content.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+      const term = searchTerms[searchKey(season, dept)];
+      if (term && !t.content.toLowerCase().includes(term.toLowerCase())) return false;
       return true;
     });
 
@@ -410,22 +411,20 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
   // 엑셀 필터 방식: 검색어가 있으면 매칭되는 날짜 행만 남김
   const displayDates = useMemo(() => {
     if (!hasAnySearch) return allDates;
-    const searchEntries = Object.entries(deptSearchTerms) as [Department, string][];
+    const entries = Object.entries(searchTerms); // ["seasonId_dept", "term"]
     return allDates.filter((date) => {
-      // 모든 visibleSeasons 중 하나라도 매칭 태스크가 있는 날짜만 표시
-      for (const seasonId of visibleSeasons) {
+      for (const [compositeKey, term] of entries) {
+        const [seasonId, dept] = compositeKey.split('_') as [string, Department];
         const actualDate = getActualDate(date, seasonId);
-        for (const [dept, term] of searchEntries) {
-          const key = `${actualDate}_${seasonId}_${dept}`;
-          const cellTasks = taskMap.get(key);
-          if (cellTasks?.some((t) => t.content.toLowerCase().includes(term.toLowerCase()))) {
-            return true;
-          }
+        const taskKey = `${actualDate}_${seasonId}_${dept}`;
+        const cellTasks = taskMap.get(taskKey);
+        if (cellTasks?.some((t) => t.content.toLowerCase().includes(term.toLowerCase()))) {
+          return true;
         }
       }
       return false;
     });
-  }, [allDates, hasAnySearch, deptSearchTerms, visibleSeasons, getActualDate, taskMap]);
+  }, [allDates, hasAnySearch, searchTerms, getActualDate, taskMap]);
 
   // 가상 스크롤 계산 (검색 시 displayDates 사용)
   const scrollDates = hasAnySearch ? displayDates : allDates;
@@ -544,8 +543,8 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
             </span>
             <button
               onClick={() => {
-                setDeptSearchTerms({});
-                setDeptSearchOpen(null);
+                setSearchTerms({});
+                setSearchOpen(null);
               }}
               className="text-[10px] text-gray-500 hover:text-red-500 px-1.5 py-0.5 rounded border border-gray-300 hover:border-red-300"
             >
@@ -619,28 +618,29 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
                   Milestone
                 </div>
                 {visibleDepts.map((d) => {
-                  const hasSearch = !!deptSearchTerms[d];
-                  const isSearchOpen = deptSearchOpen === d;
+                  const sk = searchKey(seasonId, d);
+                  const hasSearch = !!searchTerms[sk];
+                  const isOpen = searchOpen === sk;
                   return (
                     <div key={d} className="flex-1 min-w-0 border-r border-gray-200 relative">
                       <button
-                        onClick={() => toggleDeptSearch(d)}
+                        onClick={() => toggleSearch(sk)}
                         className={`w-full text-center text-[11px] font-semibold py-1 transition-colors hover:bg-gray-100 ${hasSearch ? 'underline underline-offset-2' : ''}`}
                         style={{ color: DEPARTMENT_COLORS[d] }}
-                        title={`${d} 검색 필터 ${isSearchOpen ? '닫기' : '열기'}`}
+                        title={`${seasonId} ${d} 검색 필터 ${isOpen ? '닫기' : '열기'}`}
                       >
                         {d}
                         {hasSearch && <span className="ml-0.5 text-[9px] opacity-60">*</span>}
                       </button>
-                      {isSearchOpen && (
+                      {isOpen && (
                         <div className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-200 shadow-lg rounded-b-md p-1.5">
                           <input
-                            ref={deptSearchInputRef}
+                            ref={searchInputRef}
                             type="text"
-                            value={deptSearchTerms[d] ?? ''}
-                            onChange={(e) => setDeptSearch(d, e.target.value)}
-                            onKeyDown={(e) => { if (e.key === 'Escape') toggleDeptSearch(d); }}
-                            placeholder={`${d} 검색...`}
+                            value={searchTerms[sk] ?? ''}
+                            onChange={(e) => setSearch(sk, e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Escape') toggleSearch(sk); }}
+                            placeholder={`${seasonId} ${d} 검색...`}
                             className="w-full text-[11px] border border-gray-300 rounded px-2 py-1 text-gray-700 focus:outline-none focus:border-blue-400"
                           />
                         </div>
