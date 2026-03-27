@@ -27,7 +27,7 @@ interface CalendarGridProps {
 }
 
 export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps) {
-  const { tasks, milestones, seasons, currentUser, updateTask, addTask } = useGTMStore();
+  const { tasks, milestones, seasons, currentUser, updateTask, addTask, deleteTask } = useGTMStore();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [containerHeight, setContainerHeight] = useState(800);
@@ -43,6 +43,10 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // 셀 선택 상태 (클릭으로 선택, 단축키로 복사/잘라내기/붙여넣기)
+  const [selectedCell, setSelectedCell] = useState<{ date: string; season: string; dept: Department } | null>(null);
+  const [clipboard, setClipboard] = useState<{ task: Task; mode: 'copy' | 'cut' } | null>(null);
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -98,6 +102,49 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
       searchInputRef.current.focus();
     }
   }, [searchOpen]);
+
+  // 키보드 단축키: Ctrl+C 복사, Ctrl+X 잘라내기, Ctrl+V 붙여넣기
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!currentUser || searchOpen || modalOpen) return;
+      if (!e.ctrlKey && !e.metaKey) return;
+
+      if (e.key === 'c' && selectedCell) {
+        e.preventDefault();
+        const found = tasks.find(
+          (t) => t.date === selectedCell.date && t.season === selectedCell.season && t.department === selectedCell.dept
+        );
+        if (found) setClipboard({ task: found, mode: 'copy' });
+      }
+
+      if (e.key === 'x' && selectedCell) {
+        e.preventDefault();
+        const found = tasks.find(
+          (t) => t.date === selectedCell.date && t.season === selectedCell.season && t.department === selectedCell.dept
+        );
+        if (found) setClipboard({ task: found, mode: 'cut' });
+      }
+
+      if (e.key === 'v' && selectedCell && clipboard) {
+        e.preventDefault();
+        const { task, mode } = clipboard;
+        addTask({
+          date: selectedCell.date,
+          season: selectedCell.season,
+          department: selectedCell.dept,
+          content: task.content,
+          status: task.status,
+          milestone: task.milestone,
+        });
+        if (mode === 'cut') {
+          deleteTask(task.id);
+          setClipboard(null);
+        }
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [currentUser, selectedCell, clipboard, searchOpen, modalOpen, tasks, addTask, deleteTask]);
 
   // seasonIds가 변경되면 (시즌 추가/삭제) 선택 상태 동기화
   useEffect(() => {
@@ -282,16 +329,23 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
 
     const isDropHere = dropTarget?.date === date && dropTarget?.season === season && dropTarget?.dept === dept;
     const isDragging = !!dragState;
+    const isSelected = selectedCell?.date === date && selectedCell?.season === season && selectedCell?.dept === dept;
+    const isCutSource = clipboard?.mode === 'cut' && clipboard.task && cellTasks.some((t) => t.id === clipboard.task.id);
 
     return (
       <div
         key={key}
         className={`border-b border-r border-gray-100 px-1 flex items-center cursor-pointer hover:bg-blue-50/50 transition-colors group relative ${
           isDropHere ? 'ring-2 ring-blue-400 ring-inset bg-blue-50' : ''
-        }`}
+        } ${isSelected ? 'ring-2 ring-gray-900 ring-inset' : ''}`}
         style={{
           height: ROW_HEIGHT,
           backgroundColor: isDropHere ? '#DBEAFE' : milestone ? `${milestone.color}06` : undefined,
+        }}
+        onClick={(e) => {
+          if (isDragging) return;
+          e.stopPropagation();
+          setSelectedCell({ date, season, dept });
         }}
         onDoubleClick={() => {
           if (isDragging) return;
@@ -316,7 +370,7 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
             onDragEnd={handleDragEnd}
             className={`flex items-center gap-1 text-[11px] leading-tight truncate ${
               currentUser ? 'cursor-grab active:cursor-grabbing' : ''
-            } ${dragState?.task.id === task.id ? 'opacity-40' : ''}`}
+            } ${dragState?.task.id === task.id || (isCutSource && clipboard?.task.id === task.id) ? 'opacity-40' : ''}`}
             title={`${task.content}${currentUser ? ' (더블클릭: 수정 / 드래그: 이동 / Ctrl+드래그: 복사)' : ''}`}
           >
             <span
@@ -562,6 +616,18 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
               className="text-[10px] text-gray-500 hover:text-red-500 px-1.5 py-0.5 rounded border border-gray-300 hover:border-red-300"
             >
               검색 초기화
+            </button>
+          </div>
+        )}
+
+        {clipboard && (
+          <div className="ml-2 text-[10px] text-purple-700 bg-purple-50 px-2 py-0.5 rounded flex items-center gap-1">
+            {clipboard.mode === 'copy' ? '복사됨' : '잘라냄'}: &quot;{clipboard.task.content}&quot;
+            <button
+              onClick={() => setClipboard(null)}
+              className="text-purple-400 hover:text-red-500 ml-1"
+            >
+              ✕
             </button>
           </div>
         )}
