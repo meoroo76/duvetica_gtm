@@ -172,6 +172,9 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
     return map;
   }, [tasks]);
 
+  // 검색어 활성 여부
+  const hasAnySearch = Object.keys(deptSearchTerms).length > 0;
+
   // Scroll to today on mount
   useEffect(() => {
     const todayIndex = allDates.findIndex((d) => isToday(d));
@@ -195,21 +198,6 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
       setScrollTop(scrollRef.current.scrollTop);
     }
   }, []);
-
-  const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - VISIBLE_BUFFER);
-  const endIndex = Math.min(
-    allDates.length,
-    Math.ceil((scrollTop + containerHeight) / ROW_HEIGHT) + VISIBLE_BUFFER
-  );
-  const visibleDates = allDates.slice(startIndex, endIndex);
-  const totalHeight = allDates.length * ROW_HEIGHT;
-
-  // 화면 상단에 보이는 첫 번째 날짜의 년도를 상위 컴포넌트에 전달
-  const topVisibleIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT));
-  const topVisibleYear = allDates[topVisibleIndex]?.slice(0, 4) ?? '';
-  useEffect(() => {
-    onVisibleYearChange?.(topVisibleYear);
-  }, [topVisibleYear, onVisibleYearChange]);
 
   const openModal = (date: string, season: string, dept: Department, task?: Task) => {
     if (!currentUser) return;
@@ -419,6 +407,43 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
   const visibleDepts: Department[] =
     filterDept === 'all' ? DEPARTMENTS : [filterDept];
 
+  // 엑셀 필터 방식: 검색어가 있으면 매칭되는 날짜 행만 남김
+  const displayDates = useMemo(() => {
+    if (!hasAnySearch) return allDates;
+    const searchEntries = Object.entries(deptSearchTerms) as [Department, string][];
+    return allDates.filter((date) => {
+      // 모든 visibleSeasons 중 하나라도 매칭 태스크가 있는 날짜만 표시
+      for (const seasonId of visibleSeasons) {
+        const actualDate = getActualDate(date, seasonId);
+        for (const [dept, term] of searchEntries) {
+          const key = `${actualDate}_${seasonId}_${dept}`;
+          const cellTasks = taskMap.get(key);
+          if (cellTasks?.some((t) => t.content.toLowerCase().includes(term.toLowerCase()))) {
+            return true;
+          }
+        }
+      }
+      return false;
+    });
+  }, [allDates, hasAnySearch, deptSearchTerms, visibleSeasons, getActualDate, taskMap]);
+
+  // 가상 스크롤 계산 (검색 시 displayDates 사용)
+  const scrollDates = hasAnySearch ? displayDates : allDates;
+  const startIdx = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - VISIBLE_BUFFER);
+  const endIdx = Math.min(
+    scrollDates.length,
+    Math.ceil((scrollTop + containerHeight) / ROW_HEIGHT) + VISIBLE_BUFFER
+  );
+  const renderedDates = scrollDates.slice(startIdx, endIdx);
+  const scrollTotalHeight = scrollDates.length * ROW_HEIGHT;
+
+  // 화면 상단에 보이는 날짜의 년도
+  const topIdx = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT));
+  const topYear = scrollDates[topIdx]?.slice(0, 4) ?? '';
+  useEffect(() => {
+    onVisibleYearChange?.(topYear);
+  }, [topYear, onVisibleYearChange]);
+
   return (
     <div className="flex flex-col h-full">
       {/* Filters */}
@@ -502,7 +527,7 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
         </div>
         <button
           onClick={() => {
-            const todayIndex = allDates.findIndex((d) => isToday(d));
+            const todayIndex = scrollDates.findIndex((d) => isToday(d));
             if (todayIndex >= 0 && scrollRef.current) {
               scrollRef.current.scrollTop = Math.max(0, (todayIndex - 5) * ROW_HEIGHT);
             }
@@ -511,6 +536,23 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
         >
           오늘
         </button>
+
+        {hasAnySearch && (
+          <div className="ml-2 flex items-center gap-2">
+            <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded">
+              검색 결과: {displayDates.length}일 / {allDates.length}일
+            </span>
+            <button
+              onClick={() => {
+                setDeptSearchTerms({});
+                setDeptSearchOpen(null);
+              }}
+              className="text-[10px] text-gray-500 hover:text-red-500 px-1.5 py-0.5 rounded border border-gray-300 hover:border-red-300"
+            >
+              검색 초기화
+            </button>
+          </div>
+        )}
 
         {dragState && (
           <div className="ml-auto text-xs text-blue-600 bg-blue-50 px-3 py-1 rounded-full animate-pulse">
@@ -618,16 +660,16 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
         className="flex-1 overflow-auto"
         onScroll={handleScroll}
       >
-        <div style={{ height: totalHeight, position: 'relative' }}>
+        <div style={{ height: scrollTotalHeight, position: 'relative' }}>
           <div
             style={{
               position: 'absolute',
-              top: startIndex * ROW_HEIGHT,
+              top: startIdx * ROW_HEIGHT,
               left: 0,
               right: 0,
             }}
           >
-            {visibleDates.map((date) => {
+            {renderedDates.map((date) => {
               const dayKR = getDayOfWeekKR(date);
               const weekend = isWeekend(date);
               const today = isToday(date);
