@@ -27,7 +27,7 @@ interface CalendarGridProps {
 }
 
 export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps) {
-  const { tasks, milestones, seasons, currentUser, updateTask } = useGTMStore();
+  const { tasks, milestones, seasons, currentUser, updateTask, addTask } = useGTMStore();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [containerHeight, setContainerHeight] = useState(800);
@@ -222,7 +222,7 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
 
   const handleDragOver = (e: React.DragEvent, date: string, season: string, dept: Department) => {
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
+    e.dataTransfer.dropEffect = e.ctrlKey ? 'copy' : 'move';
     setDropTarget({ date, season, dept });
   };
 
@@ -235,7 +235,20 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
     if (!dragState || !currentUser) return;
 
     const { task, originDate, originSeason, originDept } = dragState;
-    if (date !== originDate || season !== originSeason || dept !== originDept) {
+    const isSameCell = date === originDate && season === originSeason && dept === originDept;
+
+    if (e.ctrlKey) {
+      // Ctrl+드롭: 복사
+      addTask({
+        date,
+        season,
+        department: dept,
+        content: task.content,
+        status: task.status,
+        milestone: task.milestone,
+      });
+    } else if (!isSameCell) {
+      // 일반 드롭: 이동
       updateTask(task.id, {
         date,
         season,
@@ -304,7 +317,7 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
             className={`flex items-center gap-1 text-[11px] leading-tight truncate ${
               currentUser ? 'cursor-grab active:cursor-grabbing' : ''
             } ${dragState?.task.id === task.id ? 'opacity-40' : ''}`}
-            title={`${task.content}${currentUser ? ' (더블클릭: 수정 / 드래그: 이동)' : ''}`}
+            title={`${task.content}${currentUser ? ' (더블클릭: 수정 / 드래그: 이동 / Ctrl+드래그: 복사)' : ''}`}
           >
             <span
               className="w-1.5 h-1.5 rounded-full shrink-0"
@@ -555,7 +568,7 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
 
         {dragState && (
           <div className="ml-auto text-xs text-blue-600 bg-blue-50 px-3 py-1 rounded-full animate-pulse">
-            &quot;{dragState.task.content}&quot; 이동 중... 원하는 셀에 놓으세요
+            &quot;{dragState.task.content}&quot; 이동 중... 놓기=이동 / Ctrl+놓기=복사
           </div>
         )}
       </div>
