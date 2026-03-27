@@ -1,13 +1,25 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useGTMStore } from '@/store/gtmStore';
 
-export default function LoginModal() {
+interface LoginModalProps {
+  onClose: () => void;
+}
+
+export default function LoginModal({ onClose }: LoginModalProps) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const login = useGTMStore((s) => s.login);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -18,10 +30,14 @@ export default function LoginModal() {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      onClick={onClose}
+    >
       <form
         onSubmit={handleSubmit}
         className="bg-white rounded-xl shadow-2xl p-8 w-[400px]"
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="text-center mb-6">
           <h2 className="text-2xl font-bold text-gray-900">DUVETICA</h2>

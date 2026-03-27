@@ -74,7 +74,7 @@ export default function AppShell() {
       </div>
 
       {/* Modals */}
-      {showLogin && !currentUser && <LoginModal />}
+      {showLogin && !currentUser && <LoginModal onClose={() => setShowLogin(false)} />}
       <MilestoneEditor isOpen={showMilestones} onClose={() => setShowMilestones(false)} />
       <SeasonManager isOpen={showSeasons} onClose={() => setShowSeasons(false)} />
       <ExcelManager isOpen={showExcel} onClose={() => setShowExcel(false)} />
