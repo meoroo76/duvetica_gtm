@@ -28,6 +28,18 @@ export default function CalendarGrid() {
   const [scrollTop, setScrollTop] = useState(0);
   const [containerHeight, setContainerHeight] = useState(800);
 
+  // Season filter dropdown - 외부 클릭 시 닫기
+  const seasonFilterRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (seasonFilterRef.current && !seasonFilterRef.current.contains(e.target as Node)) {
+        setSeasonFilterOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
   const [modalDate, setModalDate] = useState('');
@@ -39,29 +51,74 @@ export default function CalendarGrid() {
   const sortedSeasons = useMemo(() => [...seasons].sort((a, b) => b.order - a.order), [seasons]);
   const seasonIds = useMemo(() => sortedSeasons.map((s) => s.id), [sortedSeasons]);
 
-  const [filterSeason, setFilterSeason] = useState<string>('all');
+  // 다중 시즌 선택 (최대 3개, 기본값: 최신 2개)
+  const [selectedSeasons, setSelectedSeasons] = useState<string[]>(() => seasonIds.slice(0, 2));
+  const [seasonFilterOpen, setSeasonFilterOpen] = useState(false);
   const [filterDept, setFilterDept] = useState<'all' | Department>('all');
   const [filterStatus, setFilterStatus] = useState<'all' | Task['status']>('all');
+
+  // seasonIds가 변경되면 (시즌 추가/삭제) 선택 상태 동기화
+  useEffect(() => {
+    setSelectedSeasons((prev) => {
+      const valid = prev.filter((id) => seasonIds.includes(id));
+      return valid.length > 0 ? valid : seasonIds.slice(0, 2);
+    });
+  }, [seasonIds]);
+
+  const toggleSeasonSelection = useCallback((seasonId: string) => {
+    setSelectedSeasons((prev) => {
+      if (prev.includes(seasonId)) {
+        // 최소 1개는 유지
+        if (prev.length <= 1) return prev;
+        return prev.filter((id) => id !== seasonId);
+      }
+      // 최대 3개 제한
+      if (prev.length >= 3) return prev;
+      return [...prev, seasonId];
+    });
+  }, []);
 
   // Drag and drop state
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [dropTarget, setDropTarget] = useState<{ date: string; season: string; dept: Department } | null>(null);
 
+  // 비교 모드 판별용: selectedSeasons가 모두 같은 타입인지 + 기준 시즌 계산
+  const comparisonRef = useMemo(() => {
+    const validSeasons = selectedSeasons
+      .map((id) => seasons.find((s) => s.id === id))
+      .filter(Boolean) as typeof seasons;
+    if (validSeasons.length < 2) return null;
+    if (!validSeasons.every((s) => s.type === validSeasons[0].type)) return null;
+    return validSeasons[0]; // 기준 시즌
+  }, [selectedSeasons, seasons]);
+
   // Date range: auto-calculate from seasons
   const allDates = useMemo(() => {
     if (seasons.length === 0) return generateDateRange('2025-05-01', '2026-12-31');
+
+    // 비교 모드: 기준 시즌의 날짜 범위만 사용
+    if (comparisonRef) {
+      const start = new Date(comparisonRef.startDate);
+      start.setDate(1);
+      const end = new Date(comparisonRef.endDate);
+      end.setMonth(end.getMonth() + 1);
+      end.setDate(0);
+      const startStr = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-01`;
+      const endStr = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
+      return generateDateRange(startStr, endStr);
+    }
+
     const allStarts = seasons.map((s) => s.startDate).sort();
     const allEnds = seasons.map((s) => s.endDate).sort();
-    // 1개월 전부터 1개월 후까지 여유
     const start = new Date(allStarts[0]);
-    start.setDate(1); // 해당 월 1일부터
+    start.setDate(1);
     const end = new Date(allEnds[allEnds.length - 1]);
     end.setMonth(end.getMonth() + 1);
-    end.setDate(0); // 해당 월 마지막 날
+    end.setDate(0);
     const startStr = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-01`;
     const endStr = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
     return generateDateRange(startStr, endStr);
-  }, [seasons]);
+  }, [seasons, comparisonRef]);
 
   // Build task lookup map
   const taskMap = useMemo(() => {
@@ -233,9 +290,82 @@ export default function CalendarGrid() {
     );
   };
 
-  // 최대 2개 시즌 표시 (최신 순), 필터 시 해당 시즌만
-  const visibleSeasons: string[] =
-    filterSeason === 'all' ? seasonIds.slice(0, 2) : [filterSeason];
+  // 선택된 시즌만 표시 (selectedSeasons 배열 순서 = 표시 순서, 드래그로 변경 가능)
+  const visibleSeasons: string[] = selectedSeasons.filter((id) =>
+    seasons.some((s) => s.id === id)
+  );
+
+  // 비교 모드: 선택된 시즌이 2개 이상이고 모두 같은 타입(SS/FW)이면 활성화
+  const comparisonMode = useMemo(() => {
+    if (visibleSeasons.length < 2) return null;
+    const seasonObjs = visibleSeasons.map((id) => seasons.find((s) => s.id === id)).filter(Boolean) as typeof seasons;
+    if (seasonObjs.length < 2) return null;
+    const allSameType = seasonObjs.every((s) => s.type === seasonObjs[0].type);
+    if (!allSameType) return null;
+
+    const refSeason = seasonObjs[0];
+    const yearOffsets: Record<string, number> = {};
+    for (const s of seasonObjs) {
+      yearOffsets[s.id] = s.year - refSeason.year;
+    }
+    return { refSeason, yearOffsets };
+  }, [visibleSeasons, seasons]);
+
+  // 날짜를 년도 오프셋만큼 이동
+  const offsetDate = useCallback((date: string, yearOffset: number): string => {
+    if (yearOffset === 0) return date;
+    const d = new Date(date);
+    d.setFullYear(d.getFullYear() + yearOffset);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }, []);
+
+  // 비교 모드에서 특정 시즌의 실제 날짜 반환
+  const getActualDate = useCallback((displayDate: string, seasonId: string): string => {
+    if (!comparisonMode) return displayDate;
+    const yearOff = comparisonMode.yearOffsets[seasonId] ?? 0;
+    return offsetDate(displayDate, yearOff);
+  }, [comparisonMode, offsetDate]);
+
+  // 시즌 헤더 드래그 앤 드롭 순서 변경
+  const [headerDragIdx, setHeaderDragIdx] = useState<number | null>(null);
+  const [headerDropIdx, setHeaderDropIdx] = useState<number | null>(null);
+
+  const handleHeaderDragStart = (e: React.DragEvent, idx: number) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(idx));
+    setHeaderDragIdx(idx);
+  };
+
+  const handleHeaderDragOver = (e: React.DragEvent, idx: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setHeaderDropIdx(idx);
+  };
+
+  const handleHeaderDrop = (e: React.DragEvent, dropIdx: number) => {
+    e.preventDefault();
+    if (headerDragIdx === null || headerDragIdx === dropIdx) {
+      setHeaderDragIdx(null);
+      setHeaderDropIdx(null);
+      return;
+    }
+    setSelectedSeasons((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(headerDragIdx, 1);
+      next.splice(dropIdx, 0, moved);
+      return next;
+    });
+    setHeaderDragIdx(null);
+    setHeaderDropIdx(null);
+  };
+
+  const handleHeaderDragEnd = () => {
+    setHeaderDragIdx(null);
+    setHeaderDropIdx(null);
+  };
   const visibleDepts: Department[] =
     filterDept === 'all' ? DEPARTMENTS : [filterDept];
 
@@ -243,18 +373,55 @@ export default function CalendarGrid() {
     <div className="flex flex-col h-full">
       {/* Filters */}
       <div className="flex items-center gap-4 px-4 py-2 bg-white border-b border-gray-200 shrink-0">
-        <div className="flex items-center gap-2">
+        <div ref={seasonFilterRef} className="relative flex items-center gap-2">
           <span className="text-xs text-gray-500 font-medium">시즌</span>
-          <select
-            value={filterSeason}
-            onChange={(e) => setFilterSeason(e.target.value)}
-            className="text-xs border border-gray-300 rounded px-2 py-1 text-gray-700"
+          <button
+            onClick={() => setSeasonFilterOpen((v) => !v)}
+            className="text-xs border border-gray-300 rounded px-2 py-1 text-gray-700 flex items-center gap-1 hover:border-gray-400 transition-colors min-w-[80px]"
           >
-            <option value="all">전체</option>
-            {sortedSeasons.map((s) => (
-              <option key={s.id} value={s.id}>{s.id}</option>
-            ))}
-          </select>
+            <span className="truncate">
+              {selectedSeasons.length === sortedSeasons.length
+                ? '전체'
+                : selectedSeasons.join(', ')}
+            </span>
+            <svg className={`w-3 h-3 shrink-0 transition-transform ${seasonFilterOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {seasonFilterOpen && (
+            <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1 min-w-[160px]">
+              <div className="px-3 py-1.5 text-[10px] text-gray-400 border-b border-gray-100">
+                최대 3개 선택 가능 ({selectedSeasons.length}/3)
+              </div>
+              {sortedSeasons.map((s) => {
+                const checked = selectedSeasons.includes(s.id);
+                const disabled = !checked && selectedSeasons.length >= 3;
+                const style = getSeasonStyle(s.id);
+                return (
+                  <label
+                    key={s.id}
+                    className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-gray-50 ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={disabled || (checked && selectedSeasons.length <= 1)}
+                      onChange={() => toggleSeasonSelection(s.id)}
+                      className="w-3.5 h-3.5 rounded border-gray-300 accent-gray-900"
+                    />
+                    <span
+                      className={`text-xs font-medium ${style.text}`}
+                    >
+                      {s.id}
+                    </span>
+                    <span className="text-[10px] text-gray-400 ml-auto">
+                      {s.startDate.slice(2, 7)}~{s.endDate.slice(5, 7)}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs text-gray-500 font-medium">부서</span>
@@ -302,15 +469,25 @@ export default function CalendarGrid() {
         )}
       </div>
 
+      {/* Comparison mode indicator */}
+      {comparisonMode && (
+        <div className="flex items-center gap-2 px-4 py-1 bg-indigo-50 border-b border-indigo-200 shrink-0">
+          <span className="text-[10px] text-indigo-600 font-medium">
+            비교 모드 — 동일 타입 시즌({comparisonMode.refSeason.type})을 MM-DD 기준으로 정렬하여 비교합니다
+          </span>
+        </div>
+      )}
+
       {/* Header row */}
       <div className="flex border-b-2 border-gray-300 bg-gray-50 shrink-0">
         <div className="w-[100px] shrink-0 flex items-center justify-center text-xs font-bold text-gray-700 border-r border-gray-300 py-2">
-          날짜
+          {comparisonMode ? 'MM-DD' : '날짜'}
         </div>
 
         {visibleSeasons.map((seasonId, idx) => {
           const style = getSeasonStyle(seasonId);
           const isLast = idx === visibleSeasons.length - 1;
+          const isDragOver = headerDropIdx === idx && headerDragIdx !== idx;
           return (
             <div
               key={seasonId}
@@ -318,12 +495,35 @@ export default function CalendarGrid() {
               style={{ borderColor: style.color }}
             >
               <div
-                className={`text-center text-xs font-bold py-1.5 border-b ${style.bg} ${style.text} ${style.border}`}
+                draggable={visibleSeasons.length > 1}
+                onDragStart={(e) => handleHeaderDragStart(e, idx)}
+                onDragOver={(e) => handleHeaderDragOver(e, idx)}
+                onDrop={(e) => handleHeaderDrop(e, idx)}
+                onDragEnd={handleHeaderDragEnd}
+                className={`text-center text-xs font-bold py-1.5 border-b ${style.bg} ${style.text} ${style.border} ${
+                  visibleSeasons.length > 1 ? 'cursor-grab active:cursor-grabbing' : ''
+                } ${headerDragIdx === idx ? 'opacity-40' : ''} ${
+                  isDragOver ? 'ring-2 ring-inset ring-gray-400' : ''
+                } transition-all select-none`}
+                title={visibleSeasons.length > 1 ? '드래그하여 순서 변경' : ''}
               >
+                {visibleSeasons.length > 1 && (
+                  <span className="inline-block w-3 text-[10px] opacity-40 mr-0.5">⠿</span>
+                )}
                 {seasonId}
+                {comparisonMode && (
+                  <span className="ml-1 text-[10px] opacity-60 font-normal">
+                    ({seasons.find((s) => s.id === seasonId)?.startDate.slice(0, 4)}~{seasons.find((s) => s.id === seasonId)?.endDate.slice(0, 4)})
+                  </span>
+                )}
               </div>
               <div className="flex">
-                <div className="w-[60px] shrink-0 text-center text-[10px] text-gray-500 py-1 border-r border-gray-200">
+                {comparisonMode && (
+                  <div className="w-[52px] shrink-0 text-center text-[10px] text-gray-400 py-1 border-r border-gray-200">
+                    날짜
+                  </div>
+                )}
+                <div className="w-[120px] shrink-0 text-center text-[10px] text-gray-500 py-1 border-r border-gray-200">
                   Milestone
                 </div>
                 {visibleDepts.map((d) => (
@@ -407,19 +607,31 @@ export default function CalendarGrid() {
                   {visibleSeasons.map((seasonId, idx) => {
                     const style = getSeasonStyle(seasonId);
                     const isLast = idx === visibleSeasons.length - 1;
+                    const actualDate = getActualDate(date, seasonId);
                     return (
                       <div
                         key={seasonId}
                         className={`flex flex-1 min-w-0 ${!isLast ? 'border-r-2' : ''}`}
                         style={{ borderColor: style.color + '40' }}
                       >
-                        <div className="w-[60px] shrink-0 border-r border-gray-100 border-b border-b-gray-100">
+                        {/* 비교 모드: 각 시즌 컬럼 앞에 해당 시즌의 실제 년도 날짜 표시 */}
+                        {comparisonMode && (
+                          <div
+                            className="w-[52px] shrink-0 flex items-center justify-center text-[10px] text-gray-400 border-r border-gray-100 border-b border-b-gray-100"
+                            style={{ height: ROW_HEIGHT }}
+                          >
+                            <span style={{ color: style.color }} className="font-medium opacity-70">
+                              {actualDate.slice(2, 10)}
+                            </span>
+                          </div>
+                        )}
+                        <div className="w-[120px] shrink-0 border-r border-gray-100 border-b border-b-gray-100">
                           {(() => {
                             const ms = milestones.find(
-                              (m) => m.season === seasonId && date >= m.startDate && date <= m.endDate
+                              (m) => m.season === seasonId && actualDate >= m.startDate && actualDate <= m.endDate
                             );
                             if (!ms) return <div style={{ height: ROW_HEIGHT }} />;
-                            const isStart = date === ms.startDate;
+                            const isStart = actualDate === ms.startDate;
                             return (
                               <div
                                 className="h-full flex items-center px-1"
@@ -436,7 +648,7 @@ export default function CalendarGrid() {
                         </div>
                         {visibleDepts.map((dept) => (
                           <div key={dept} className="flex-1 min-w-0">
-                            {renderCell(date, seasonId, dept)}
+                            {renderCell(actualDate, seasonId, dept)}
                           </div>
                         ))}
                       </div>
