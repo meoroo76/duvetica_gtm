@@ -20,6 +20,7 @@ export default function AppShell() {
   const [showSeasons, setShowSeasons] = useState(false);
   const [showExcel, setShowExcel] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [visibleYear, setVisibleYear] = useState('');
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -49,6 +50,7 @@ export default function AppShell() {
         onOpenSeasons={() => setShowSeasons(true)}
         onOpenExcel={() => setShowExcel(true)}
         onOpenNotifications={() => setShowNotifications(true)}
+        visibleYear={visibleYear}
       />
 
       {!currentUser && (
@@ -66,7 +68,7 @@ export default function AppShell() {
       )}
 
       <div className="flex-1 overflow-hidden">
-        {activeTab === 'calendar' && <CalendarGrid />}
+        {activeTab === 'calendar' && <CalendarGrid onVisibleYearChange={setVisibleYear} />}
         {activeTab === 'dashboard' && <Dashboard />}
         {activeTab === 'guide' && <UserGuide />}
       </div>

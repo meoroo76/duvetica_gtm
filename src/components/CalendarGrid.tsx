@@ -22,7 +22,11 @@ interface DragState {
   originDept: Department;
 }
 
-export default function CalendarGrid() {
+interface CalendarGridProps {
+  onVisibleYearChange?: (year: string) => void;
+}
+
+export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps) {
   const { tasks, milestones, seasons, currentUser, updateTask } = useGTMStore();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -162,6 +166,13 @@ export default function CalendarGrid() {
   );
   const visibleDates = allDates.slice(startIndex, endIndex);
   const totalHeight = allDates.length * ROW_HEIGHT;
+
+  // 화면 상단에 보이는 첫 번째 날짜의 년도를 상위 컴포넌트에 전달
+  const topVisibleIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT));
+  const topVisibleYear = allDates[topVisibleIndex]?.slice(0, 4) ?? '';
+  useEffect(() => {
+    onVisibleYearChange?.(topVisibleYear);
+  }, [topVisibleYear, onVisibleYearChange]);
 
   const openModal = (date: string, season: string, dept: Department, task?: Task) => {
     if (!currentUser) return;

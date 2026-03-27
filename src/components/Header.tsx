@@ -11,6 +11,7 @@ interface HeaderProps {
   onOpenSeasons: () => void;
   onOpenExcel: () => void;
   onOpenNotifications: () => void;
+  visibleYear?: string;
 }
 
 export default function Header({
@@ -20,6 +21,7 @@ export default function Header({
   onOpenSeasons,
   onOpenExcel,
   onOpenNotifications,
+  visibleYear,
 }: HeaderProps) {
   const { currentUser, logout, tasks, syncing, lastSyncedAt, syncToServer } = useGTMStore();
   const today = formatDate(new Date());
@@ -42,6 +44,11 @@ export default function Header({
         <span className="text-xs text-gray-400 border-l border-gray-700 pl-3">
           GTM Schedule
         </span>
+        {visibleYear && activeTab === 'calendar' && (
+          <span className="text-sm font-semibold text-white/80 bg-white/10 px-2.5 py-0.5 rounded-md ml-1">
+            {visibleYear}
+          </span>
+        )}
       </div>
 
       <nav className="flex items-center gap-1 ml-8">
