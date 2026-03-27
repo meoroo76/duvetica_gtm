@@ -61,6 +61,43 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
   const [filterDept, setFilterDept] = useState<'all' | Department>('all');
   const [filterStatus, setFilterStatus] = useState<'all' | Task['status']>('all');
 
+  // 부서별 검색어 필터
+  const [deptSearchTerms, setDeptSearchTerms] = useState<Partial<Record<Department, string>>>({});
+  const [deptSearchOpen, setDeptSearchOpen] = useState<Department | null>(null);
+  const deptSearchInputRef = useRef<HTMLInputElement>(null);
+
+  const setDeptSearch = useCallback((dept: Department, term: string) => {
+    setDeptSearchTerms((prev) => {
+      if (!term) {
+        const next = { ...prev };
+        delete next[dept];
+        return next;
+      }
+      return { ...prev, [dept]: term };
+    });
+  }, []);
+
+  const toggleDeptSearch = useCallback((dept: Department) => {
+    setDeptSearchOpen((prev) => {
+      if (prev === dept) {
+        // 닫을 때 검색어 초기화
+        setDeptSearchTerms((t) => {
+          const next = { ...t };
+          delete next[dept];
+          return next;
+        });
+        return null;
+      }
+      return dept;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (deptSearchOpen && deptSearchInputRef.current) {
+      deptSearchInputRef.current.focus();
+    }
+  }, [deptSearchOpen]);
+
   // seasonIds가 변경되면 (시즌 추가/삭제) 선택 상태 동기화
   useEffect(() => {
     setSelectedSeasons((prev) => {
@@ -232,6 +269,8 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
 
     const filteredTasks = cellTasks.filter((t) => {
       if (filterStatus !== 'all' && t.status !== filterStatus) return false;
+      const searchTerm = deptSearchTerms[dept];
+      if (searchTerm && !t.content.toLowerCase().includes(searchTerm.toLowerCase())) return false;
       return true;
     });
 
@@ -537,15 +576,36 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
                 <div className="w-[120px] shrink-0 text-center text-[10px] text-gray-500 py-1 border-r border-gray-200">
                   Milestone
                 </div>
-                {visibleDepts.map((d) => (
-                  <div
-                    key={d}
-                    className="flex-1 min-w-0 text-center text-[11px] font-semibold py-1 border-r border-gray-200"
-                    style={{ color: DEPARTMENT_COLORS[d] }}
-                  >
-                    {d}
-                  </div>
-                ))}
+                {visibleDepts.map((d) => {
+                  const hasSearch = !!deptSearchTerms[d];
+                  const isSearchOpen = deptSearchOpen === d;
+                  return (
+                    <div key={d} className="flex-1 min-w-0 border-r border-gray-200 relative">
+                      <button
+                        onClick={() => toggleDeptSearch(d)}
+                        className={`w-full text-center text-[11px] font-semibold py-1 transition-colors hover:bg-gray-100 ${hasSearch ? 'underline underline-offset-2' : ''}`}
+                        style={{ color: DEPARTMENT_COLORS[d] }}
+                        title={`${d} 검색 필터 ${isSearchOpen ? '닫기' : '열기'}`}
+                      >
+                        {d}
+                        {hasSearch && <span className="ml-0.5 text-[9px] opacity-60">*</span>}
+                      </button>
+                      {isSearchOpen && (
+                        <div className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-200 shadow-lg rounded-b-md p-1.5">
+                          <input
+                            ref={deptSearchInputRef}
+                            type="text"
+                            value={deptSearchTerms[d] ?? ''}
+                            onChange={(e) => setDeptSearch(d, e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Escape') toggleDeptSearch(d); }}
+                            placeholder={`${d} 검색...`}
+                            className="w-full text-[11px] border border-gray-300 rounded px-2 py-1 text-gray-700 focus:outline-none focus:border-blue-400"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           );
