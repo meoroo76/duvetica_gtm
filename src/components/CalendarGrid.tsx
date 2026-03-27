@@ -622,28 +622,36 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
                   const hasSearch = !!searchTerms[sk];
                   const isOpen = searchOpen === sk;
                   return (
-                    <div key={d} className="flex-1 min-w-0 border-r border-gray-200 relative">
-                      <button
-                        onClick={() => toggleSearch(sk)}
-                        className={`w-full text-center text-[11px] font-semibold py-1 transition-colors hover:bg-gray-100 ${hasSearch ? 'underline underline-offset-2' : ''}`}
-                        style={{ color: DEPARTMENT_COLORS[d] }}
-                        title={`${seasonId} ${d} 검색 필터 ${isOpen ? '닫기' : '열기'}`}
-                      >
-                        {d}
-                        {hasSearch && <span className="ml-0.5 text-[9px] opacity-60">*</span>}
-                      </button>
-                      {isOpen && (
-                        <div className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-200 shadow-lg rounded-b-md p-1.5">
+                    <div key={d} className="flex-1 min-w-0 border-r border-gray-200">
+                      {isOpen ? (
+                        <div className="flex items-center px-0.5 py-0.5">
                           <input
                             ref={searchInputRef}
                             type="text"
                             value={searchTerms[sk] ?? ''}
                             onChange={(e) => setSearch(sk, e.target.value)}
                             onKeyDown={(e) => { if (e.key === 'Escape') toggleSearch(sk); }}
-                            placeholder={`${seasonId} ${d} 검색...`}
-                            className="w-full text-[11px] border border-gray-300 rounded px-2 py-1 text-gray-700 focus:outline-none focus:border-blue-400"
+                            placeholder={`${d} 검색...`}
+                            className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-0.5 text-gray-700 focus:outline-none focus:border-blue-400 min-w-0"
                           />
+                          <button
+                            onClick={() => toggleSearch(sk)}
+                            className="shrink-0 ml-0.5 text-gray-400 hover:text-red-500 text-[11px] px-0.5"
+                            title="닫기"
+                          >
+                            ✕
+                          </button>
                         </div>
+                      ) : (
+                        <button
+                          onClick={() => toggleSearch(sk)}
+                          className={`w-full text-center text-[11px] font-semibold py-1 transition-colors hover:bg-gray-100 ${hasSearch ? 'underline underline-offset-2' : ''}`}
+                          style={{ color: DEPARTMENT_COLORS[d] }}
+                          title={`${seasonId} ${d} 검색 필터 열기`}
+                        >
+                          {d}
+                          {hasSearch && <span className="ml-0.5 text-[9px] opacity-60">*</span>}
+                        </button>
                       )}
                     </div>
                   );
