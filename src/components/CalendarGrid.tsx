@@ -280,7 +280,7 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
           height: ROW_HEIGHT,
           backgroundColor: isDropHere ? '#DBEAFE' : milestone ? `${milestone.color}06` : undefined,
         }}
-        onClick={() => {
+        onDoubleClick={() => {
           if (isDragging) return;
           if (filteredTasks.length >= 1) {
             openModal(date, season, dept, filteredTasks[0]);
@@ -304,7 +304,7 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
             className={`flex items-center gap-1 text-[11px] leading-tight truncate ${
               currentUser ? 'cursor-grab active:cursor-grabbing' : ''
             } ${dragState?.task.id === task.id ? 'opacity-40' : ''}`}
-            title={`${task.content}${currentUser ? ' (드래그하여 이동)' : ''}`}
+            title={`${task.content}${currentUser ? ' (더블클릭: 수정 / 드래그: 이동)' : ''}`}
           >
             <span
               className="w-1.5 h-1.5 rounded-full shrink-0"
@@ -319,7 +319,7 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
         ))}
         {filteredTasks.length === 0 && currentUser && !isDragging && (
           <span className="text-gray-300 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">
-            + 추가
+            더블클릭
           </span>
         )}
         {filteredTasks.length === 0 && isDropHere && (
