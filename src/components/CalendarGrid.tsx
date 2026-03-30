@@ -32,7 +32,7 @@ interface CalendarGridProps {
 }
 
 export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps) {
-  const { tasks, milestones, seasons, currentUser, updateTask, addTask, deleteTask } = useGTMStore();
+  const { tasks, milestones, seasons, currentUser, updateTask, addTask, deleteTask, rescheduleTask } = useGTMStore();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [containerHeight, setContainerHeight] = useState(800);
@@ -372,12 +372,18 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
         milestone: task.milestone,
       });
     } else if (!isSameCell) {
-      // 일반 드롭: 이동
-      updateTask(task.id, {
-        date,
-        season,
-        department: dept,
-      });
+      const dateChanged = date !== originDate;
+      if (dateChanged && task.status !== 'rescheduled') {
+        // 날짜 변경 시 reschedule (연결 표시)
+        rescheduleTask(task.id, date, season, dept);
+      } else {
+        // 같은 날짜 내 이동 (부서/시즌만 변경)
+        updateTask(task.id, {
+          date,
+          season,
+          department: dept,
+        });
+      }
     }
 
     setDragState(null);
@@ -478,31 +484,51 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
         )}
         {/* 일반 태스크 콘텐츠 */}
         <div className="relative z-10 flex items-center px-1 h-full">
-          {filteredRegular.map((task, i) => (
-            <div
-              key={task.id}
-              draggable={!!currentUser}
-              onDragStart={(e) => {
-                e.stopPropagation();
-                handleDragStart(e, task, date, season, dept);
-              }}
-              onDragEnd={handleDragEnd}
-              className={`flex items-center gap-1 text-[11px] leading-tight truncate ${
-                currentUser ? 'cursor-grab active:cursor-grabbing' : ''
-              } ${dragState?.task.id === task.id || (isCutSource && clipboard?.task.id === task.id) ? 'opacity-40' : ''}`}
-              title={`${task.content}${currentUser ? ' (더블클릭: 수정 / 드래그: 이동 / Ctrl+드래그: 복사)' : ''}`}
-            >
-              <span
-                className="w-1.5 h-1.5 rounded-full shrink-0"
-                style={{ backgroundColor: STATUS_COLORS[task.status] }}
-              />
-              <span className="truncate text-gray-700">
-                {filteredRegular.length > 1 && i === 0
-                  ? `${task.content} (+${filteredRegular.length - 1})`
-                  : task.content}
-              </span>
-            </div>
-          ))}
+          {filteredRegular.map((task, i) => {
+            const isRescheduled = task.status === 'rescheduled';
+            const linkedTo = isRescheduled ? tasks.find((t) => t.id === task.linkedTo) : null;
+            const linkedFrom = task.linkedFrom ? tasks.find((t) => t.id === task.linkedFrom) : null;
+
+            return (
+              <div
+                key={task.id}
+                draggable={!!currentUser && !isRescheduled}
+                onDragStart={(e) => {
+                  e.stopPropagation();
+                  handleDragStart(e, task, date, season, dept);
+                }}
+                onDragEnd={handleDragEnd}
+                className={`flex items-center gap-1 text-[11px] leading-tight truncate ${
+                  currentUser && !isRescheduled ? 'cursor-grab active:cursor-grabbing' : ''
+                } ${dragState?.task.id === task.id || (isCutSource && clipboard?.task.id === task.id) ? 'opacity-40' : ''} ${
+                  isRescheduled ? 'opacity-40' : ''
+                }`}
+                title={
+                  isRescheduled
+                    ? `${task.content} → ${linkedTo?.date ?? ''}로 변경됨`
+                    : linkedFrom
+                    ? `${task.content} (← ${linkedFrom.date}에서 변경)`
+                    : `${task.content}${currentUser ? ' (더블클릭: 수정 / 드래그: 이동 / Ctrl+드래그: 복사)' : ''}`
+                }
+              >
+                <span
+                  className="w-1.5 h-1.5 rounded-full shrink-0"
+                  style={{ backgroundColor: STATUS_COLORS[task.status] }}
+                />
+                {linkedFrom && (
+                  <span className="text-[9px] text-blue-400 shrink-0">←{linkedFrom.date.slice(5)}</span>
+                )}
+                <span className={`truncate ${isRescheduled ? 'line-through text-gray-400' : 'text-gray-700'}`}>
+                  {filteredRegular.length > 1 && i === 0
+                    ? `${task.content} (+${filteredRegular.length - 1})`
+                    : task.content}
+                </span>
+                {isRescheduled && linkedTo && (
+                  <span className="text-[9px] text-gray-400 shrink-0">→{linkedTo.date.slice(5)}</span>
+                )}
+              </div>
+            );
+          })}
           {filteredRegular.length === 0 && !hasPeriod && currentUser && !isDragging && (
             <span className="text-gray-300 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">
               더블클릭

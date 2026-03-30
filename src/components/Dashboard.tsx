@@ -22,7 +22,7 @@ export default function Dashboard() {
     for (const season of sortedSeasons) {
       result[season.id] = {
         total: 0,
-        byStatus: { pending: 0, in_progress: 0, completed: 0, delayed: 0 },
+        byStatus: { pending: 0, in_progress: 0, completed: 0, delayed: 0, rescheduled: 0 },
         byDept: {},
         overdue: [],
         upcoming: [],

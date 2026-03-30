@@ -36,6 +36,7 @@ interface GTMState {
   updateTask: (id: string, updates: Partial<Task>) => void;
   deleteTask: (id: string) => void;
   getTasksForDateAndDept: (date: string, season: string, dept: Department) => Task[];
+  rescheduleTask: (id: string, newDate: string, newSeason?: string, newDept?: Department) => void;
 
   // Milestones
   addMilestone: (milestone: Omit<Milestone, 'id'>) => void;
@@ -123,6 +124,36 @@ export const useGTMStore = create<GTMState>()(
         return get().tasks.filter(
           (t) => t.date === date && t.season === season && t.department === dept
         );
+      },
+
+      rescheduleTask: (id, newDate, newSeason, newDept) => {
+        const user = get().currentUser;
+        if (!user) return;
+        const original = get().tasks.find((t) => t.id === id);
+        if (!original) return;
+
+        const newId = uuidv4();
+        const now = new Date().toISOString();
+
+        set((state) => ({
+          tasks: state.tasks.map((t) =>
+            t.id === id
+              ? { ...t, status: 'rescheduled' as const, linkedTo: newId, updatedAt: now }
+              : t
+          ).concat({
+            ...original,
+            id: newId,
+            date: newDate,
+            season: newSeason ?? original.season,
+            department: newDept ?? original.department,
+            status: original.status === 'rescheduled' ? 'pending' : original.status,
+            linkedFrom: id,
+            linkedTo: undefined,
+            createdBy: user.username,
+            updatedAt: now,
+          }),
+        }));
+        scheduleSyncToServer();
       },
 
       getMilestoneForDate: (date, season) => {

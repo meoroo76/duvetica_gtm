@@ -15,11 +15,13 @@ export interface Task {
   department: Department;
   content: string;
   milestone?: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'delayed';
+  status: 'pending' | 'in_progress' | 'completed' | 'delayed' | 'rescheduled';
   createdBy: string;
   updatedAt: string;
-  endDate?: string;   // YYYY-MM-DD, 설정 시 기간 태스크
-  barColor?: string;  // 기간 태스크 셀 배경색 (hex)
+  endDate?: string;     // YYYY-MM-DD, 설정 시 기간 태스크
+  barColor?: string;    // 기간 태스크 셀 배경색 (hex)
+  linkedFrom?: string;  // 원본 태스크 ID (이 태스크가 어디서 변경되었는지)
+  linkedTo?: string;    // 변경된 태스크 ID (이 태스크가 어디로 변경되었는지)
 }
 
 export type Department = '기획' | '디자인' | '소재' | '소싱';
@@ -61,6 +63,7 @@ export const STATUS_COLORS: Record<Task['status'], string> = {
   in_progress: '#3B82F6',
   completed: '#10B981',
   delayed: '#EF4444',
+  rescheduled: '#9CA3AF',
 };
 
 export const STATUS_LABELS: Record<Task['status'], string> = {
@@ -68,6 +71,7 @@ export const STATUS_LABELS: Record<Task['status'], string> = {
   in_progress: '진행중',
   completed: '완료',
   delayed: '지연',
+  rescheduled: '변경됨',
 };
 
 // 기간 일정 색상 팔레트

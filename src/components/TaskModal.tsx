@@ -21,11 +21,12 @@ export default function TaskModal({
   department,
   existingTask,
 }: TaskModalProps) {
-  const { addTask, updateTask, deleteTask, currentUser, milestones } = useGTMStore();
+  const { tasks, addTask, updateTask, deleteTask, rescheduleTask, currentUser, milestones } = useGTMStore();
   const [content, setContent] = useState('');
   const [status, setStatus] = useState<Task['status']>('pending');
   const [selectedMilestone, setSelectedMilestone] = useState('');
   const [dept, setDept] = useState<Department>(department);
+  const [editDate, setEditDate] = useState(date);
 
   useEffect(() => {
     if (existingTask) {
@@ -33,13 +34,19 @@ export default function TaskModal({
       setStatus(existingTask.status);
       setSelectedMilestone(existingTask.milestone || '');
       setDept(existingTask.department);
+      setEditDate(existingTask.date);
     } else {
       setContent('');
       setStatus('pending');
       setSelectedMilestone('');
       setDept(department);
+      setEditDate(date);
     }
-  }, [existingTask, department]);
+  }, [existingTask, department, date]);
+
+  // 연결된 태스크 정보
+  const linkedFromTask = existingTask?.linkedFrom ? tasks.find((t) => t.id === existingTask.linkedFrom) : null;
+  const linkedToTask = existingTask?.linkedTo ? tasks.find((t) => t.id === existingTask.linkedTo) : null;
 
   if (!isOpen || !currentUser) return null;
 
@@ -48,15 +55,21 @@ export default function TaskModal({
   const handleSave = () => {
     if (!content.trim()) return;
     if (existingTask) {
-      updateTask(existingTask.id, {
-        content,
-        status,
-        milestone: selectedMilestone || undefined,
-        department: dept,
-      });
+      const dateChanged = editDate !== existingTask.date;
+      if (dateChanged && existingTask.status !== 'rescheduled') {
+        // 날짜가 변경되면 reschedule 처리
+        rescheduleTask(existingTask.id, editDate);
+      } else {
+        updateTask(existingTask.id, {
+          content,
+          status,
+          milestone: selectedMilestone || undefined,
+          department: dept,
+        });
+      }
     } else {
       addTask({
-        date,
+        date: editDate,
         season,
         department: dept,
         content,
@@ -89,12 +102,44 @@ export default function TaskModal({
           </button>
         </div>
 
-        <div className="text-sm text-gray-500 mb-4 flex gap-3">
-          <span className="px-2 py-1 bg-gray-100 rounded font-medium">{date}</span>
+        <div className="text-sm text-gray-500 mb-4 flex items-center gap-3">
+          {existingTask && existingTask.status !== 'rescheduled' ? (
+            <input
+              type="date"
+              value={editDate}
+              onChange={(e) => setEditDate(e.target.value)}
+              className={`px-2 py-1 border rounded font-medium text-sm ${
+                editDate !== existingTask.date
+                  ? 'border-amber-400 bg-amber-50 text-amber-700'
+                  : 'border-gray-200 bg-gray-100 text-gray-700'
+              }`}
+            />
+          ) : (
+            <span className="px-2 py-1 bg-gray-100 rounded font-medium">{editDate}</span>
+          )}
           <span className={`px-2 py-1 rounded font-medium ${getSeasonStyle(season).badgeBg} ${getSeasonStyle(season).badgeText}`}>
             {season}
           </span>
+          {editDate !== (existingTask?.date ?? date) && (
+            <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
+              {existingTask?.date}에서 변경
+            </span>
+          )}
         </div>
+
+        {/* 연결된 일정 정보 */}
+        {linkedFromTask && (
+          <div className="text-xs text-blue-600 bg-blue-50 px-3 py-1.5 rounded mb-3 flex items-center gap-1">
+            <span>←</span>
+            <span>원래 일정: {linkedFromTask.date} ({linkedFromTask.content})</span>
+          </div>
+        )}
+        {linkedToTask && (
+          <div className="text-xs text-gray-500 bg-gray-50 px-3 py-1.5 rounded mb-3 flex items-center gap-1">
+            <span>→</span>
+            <span>변경된 일정: {linkedToTask.date} ({linkedToTask.content})</span>
+          </div>
+        )}
 
         <div className="space-y-4">
           <div>
@@ -128,10 +173,14 @@ export default function TaskModal({
               value={status}
               onChange={(e) => setStatus(e.target.value as Task['status'])}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900"
+              disabled={existingTask?.status === 'rescheduled'}
             >
-              {(Object.keys(STATUS_LABELS) as Task['status'][]).map((s) => (
+              {(Object.keys(STATUS_LABELS) as Task['status'][]).filter((s) => s !== 'rescheduled').map((s) => (
                 <option key={s} value={s}>{STATUS_LABELS[s]}</option>
               ))}
+              {existingTask?.status === 'rescheduled' && (
+                <option value="rescheduled">{STATUS_LABELS.rescheduled}</option>
+              )}
             </select>
           </div>
 
