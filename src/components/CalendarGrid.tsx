@@ -16,7 +16,8 @@ import TaskModal from './TaskModal';
 import PeriodScheduleModal from './PeriodScheduleModal';
 
 const ROW_HEIGHT = 32;
-const GROUP_ROW_HEIGHT = 48;
+const GROUP_ROW_HEIGHT_WEEKLY = 64;   // 주차: 기본의 2배
+const GROUP_ROW_HEIGHT_MONTHLY = 128; // 월별: 기본의 4배
 const VISIBLE_BUFFER = 20;
 
 interface DragState {
@@ -269,13 +270,35 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
   // 검색어 활성 여부
   const hasAnySearch = Object.keys(searchTerms).length > 0;
 
-  // Scroll to today on mount
+  const groupRowHeight = viewMode === 'monthly' ? GROUP_ROW_HEIGHT_MONTHLY : GROUP_ROW_HEIGHT_WEEKLY;
+
+  // 뷰 모드용 날짜 그룹 (allDates 기반, 스크롤 위치 계산에 사용)
+  const allDateGroups = useMemo(() => {
+    if (viewMode === 'daily') return null;
+    return viewMode === 'weekly' ? groupDatesByWeek(allDates) : groupDatesByMonth(allDates);
+  }, [viewMode, allDates]);
+
+  // Scroll to today on mount and when viewMode changes
   useEffect(() => {
-    const todayIndex = allDates.findIndex((d) => isToday(d));
-    if (todayIndex >= 0 && scrollRef.current) {
-      scrollRef.current.scrollTop = Math.max(0, (todayIndex - 5) * ROW_HEIGHT);
+    if (!scrollRef.current) return;
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    if (viewMode === 'daily') {
+      const todayIndex = allDates.findIndex((d) => isToday(d));
+      if (todayIndex >= 0) {
+        scrollRef.current.scrollTop = Math.max(0, (todayIndex - 5) * ROW_HEIGHT);
+      }
+    } else {
+      // 그룹 모드: 오늘이 포함된 그룹을 찾아서 스크롤
+      if (allDateGroups) {
+        const groupIdx = allDateGroups.findIndex((g) => g.dates.some((d) => d === todayStr));
+        if (groupIdx >= 0) {
+          const offset = groupIdx * groupRowHeight;
+          scrollRef.current.scrollTop = Math.max(0, offset - groupRowHeight);
+        }
+      }
     }
-  }, [allDates]);
+  }, [allDates, viewMode, allDateGroups, groupRowHeight]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -505,16 +528,17 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
       for (const t of cellTasks) {
         if (!seen.has(t.id)) {
           seen.add(t.id);
-          // 상태 필터 적용
           if (filterStatus !== 'all' && t.status !== filterStatus) continue;
           allTasks.push(t);
         }
       }
     }
 
+    const height = groupRowHeight;
+
     if (allTasks.length === 0) {
       return (
-        <div className="flex-1 min-w-0 border-b border-r border-gray-100 flex items-center justify-center" style={{ height: GROUP_ROW_HEIGHT }}>
+        <div className="flex-1 min-w-0 border-b border-r border-gray-100 flex items-center justify-center" style={{ height }}>
           <span className="text-[10px] text-gray-300">-</span>
         </div>
       );
@@ -522,52 +546,32 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
 
     const regularTasks = allTasks.filter((t) => !t.endDate);
     const periodTasks = allTasks.filter((t) => t.endDate);
-    const total = regularTasks.length;
-    const completed = regularTasks.filter((t) => t.status === 'completed').length;
-    const delayed = regularTasks.filter((t) => t.status === 'delayed').length;
-    const inProgress = regularTasks.filter((t) => t.status === 'in_progress').length;
-    const progressPct = total > 0 ? Math.round((completed / total) * 100) : 0;
 
-    // 주요 업무 내용 (최대 2개)
-    const topContents = regularTasks.slice(0, 2).map((t) => t.content);
+    // 표시할 업무 내용 수: 주차=3개, 월별=8개
+    const maxItems = viewMode === 'monthly' ? 8 : 3;
+    const displayTasks = [...regularTasks, ...periodTasks].slice(0, maxItems);
+    const remaining = regularTasks.length + periodTasks.length - displayTasks.length;
 
     return (
       <div
-        className="flex-1 min-w-0 border-b border-r border-gray-100 px-1.5 py-1 cursor-default hover:bg-gray-50/50 transition-colors"
-        style={{ height: GROUP_ROW_HEIGHT }}
-        title={`${dept}: 총 ${total}건 (완료 ${completed}, 진행 ${inProgress}, 지연 ${delayed})${periodTasks.length > 0 ? ` + 기간일정 ${periodTasks.length}건` : ''}`}
+        className="flex-1 min-w-0 border-b border-r border-gray-100 px-1.5 py-1 cursor-default hover:bg-gray-50/50 transition-colors overflow-hidden"
+        style={{ height }}
       >
-        {/* 상태 카운트 + 진���률 */}
-        <div className="flex items-center gap-1.5 mb-0.5">
-          <span className="text-[10px] font-semibold text-gray-700">{total}건</span>
-          {delayed > 0 && (
-            <span className="text-[9px] text-red-500 font-medium">지연{delayed}</span>
+        <div className="flex flex-col gap-0.5 h-full">
+          {displayTasks.map((task) => (
+            <div key={task.id} className="flex items-center gap-1 min-w-0">
+              <span
+                className="w-1.5 h-1.5 rounded-full shrink-0"
+                style={{ backgroundColor: task.endDate ? (task.barColor || '#8B5CF6') : STATUS_COLORS[task.status] }}
+              />
+              <span className="text-[10px] text-gray-700 truncate leading-tight">
+                {task.content}
+              </span>
+            </div>
+          ))}
+          {remaining > 0 && (
+            <span className="text-[9px] text-gray-400 pl-2.5">+{remaining}개 더</span>
           )}
-          {inProgress > 0 && (
-            <span className="text-[9px] text-blue-500">진행{inProgress}</span>
-          )}
-          {completed > 0 && (
-            <span className="text-[9px] text-green-500">완료{completed}</span>
-          )}
-          {periodTasks.length > 0 && (
-            <span className="text-[9px] text-purple-400">기간{periodTasks.length}</span>
-          )}
-        </div>
-        {/* 진행률 바 */}
-        {total > 0 && (
-          <div className="w-full h-1 bg-gray-200 rounded-full overflow-hidden mb-0.5">
-            <div
-              className="h-full rounded-full transition-all"
-              style={{
-                width: `${progressPct}%`,
-                backgroundColor: progressPct === 100 ? '#10B981' : delayed > 0 ? '#F59E0B' : '#3B82F6',
-              }}
-            />
-          </div>
-        )}
-        {/* 주요 내용 */}
-        <div className="text-[9px] text-gray-500 truncate leading-tight">
-          {topContents.join(' / ')}{total > 2 ? ` (+${total - 2})` : ''}
         </div>
       </div>
     );
@@ -703,10 +707,10 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
     let cumulative = 0;
     for (const row of flatRows) {
       offsets.push(cumulative);
-      cumulative += row.type === 'group' ? GROUP_ROW_HEIGHT : ROW_HEIGHT;
+      cumulative += row.type === 'group' ? groupRowHeight : ROW_HEIGHT;
     }
     return { offsets, totalHeight: cumulative };
-  }, [flatRows]);
+  }, [flatRows, groupRowHeight]);
 
   // 가상 스크롤: 가시 범위의 행 인덱스 계산
   const { visibleStartIdx, visibleEndIdx } = useMemo(() => {
@@ -718,7 +722,7 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
     let lo = 0, hi = offsets.length - 1;
     while (lo < hi) {
       const mid = (lo + hi) >> 1;
-      const rowBottom = offsets[mid] + (flatRows[mid].type === 'group' ? GROUP_ROW_HEIGHT : ROW_HEIGHT);
+      const rowBottom = offsets[mid] + (flatRows[mid].type === 'group' ? groupRowHeight : ROW_HEIGHT);
       if (rowBottom < viewTop) lo = mid + 1;
       else hi = mid;
     }
@@ -730,7 +734,7 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
     endIdx = Math.min(offsets.length, endIdx + VISIBLE_BUFFER);
 
     return { visibleStartIdx: startIdx, visibleEndIdx: endIdx };
-  }, [scrollTop, containerHeight, rowOffsets, flatRows]);
+  }, [scrollTop, containerHeight, rowOffsets, flatRows, groupRowHeight]);
 
   const renderedRows = flatRows.slice(visibleStartIdx, visibleEndIdx);
   const scrollTotalHeight = rowOffsets.totalHeight;
@@ -1030,7 +1034,7 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
                   <div
                     key={`group-${group.key}`}
                     className="flex bg-gray-50 border-b-2 border-gray-200 hover:bg-gray-100 transition-colors"
-                    style={{ height: GROUP_ROW_HEIGHT }}
+                    style={{ height: groupRowHeight }}
                   >
                     {/* 그룹 라벨 (좌측 날짜 컬럼) */}
                     <div
@@ -1060,12 +1064,12 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
                           style={{ borderColor: style.color + '40' }}
                         >
                           {comparisonMode && (
-                            <div className="w-[52px] shrink-0 border-r border-gray-100" style={{ height: GROUP_ROW_HEIGHT }} />
+                            <div className="w-[52px] shrink-0 border-r border-gray-100" style={{ height: groupRowHeight }} />
                           )}
                           {/* 마일스톤 컬럼: 해당 기간에 걸친 마일스톤 이름들 */}
                           <div
                             className="w-[120px] shrink-0 border-r border-gray-100 flex items-center px-1"
-                            style={{ height: GROUP_ROW_HEIGHT }}
+                            style={{ height: groupRowHeight }}
                           >
                             {(() => {
                               const msNames = new Set<string>();
