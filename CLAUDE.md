@@ -12,6 +12,8 @@ This project uses **Next.js 16.2.1** which has breaking changes from earlier ver
 
 ## Commands
 
+All commands run from the `duvetica-gtm/` directory (not the repo root `GTM/`).
+
 ```bash
 npm run dev      # Dev server at http://localhost:3000
 npm run build    # Production build
@@ -19,10 +21,12 @@ npm start        # Run production server
 npm run lint     # ESLint (v9 flat config in eslint.config.mjs)
 ```
 
-Playwright E2E tests are configured:
+Playwright E2E tests (Chromium only, single worker):
 ```bash
-npm run test:e2e    # Run Playwright tests (headless)
-npm run test:e2e:ui # Run with Playwright UI
+npm run test:e2e                              # Run all tests (headless)
+npm run test:e2e:ui                           # Run with Playwright UI
+npx playwright test e2e/cell-clipboard.spec.ts # Run a single test file
+npx playwright test -g "test name"            # Run by test name
 ```
 
 ## Architecture
@@ -59,6 +63,12 @@ npm run test:e2e:ui # Run with Playwright UI
 - Multiple overlapping periods render as horizontal stripes (1/N height each)
 - Created via [+] button on department column headers → PeriodScheduleModal
 - Excluded from Ctrl+C/X/V clipboard and drag operations
+
+**CalendarGrid (largest component, ~977 lines):**
+- Virtual scrolling for performance: ROW_HEIGHT=32px, VISIBLE_BUFFER=20 rows
+- Multi-season filter (max 3, defaults to 2 latest) with department/status/search filters
+- Cell keyboard shortcuts: Ctrl+C (copy), Ctrl+X (cut), Ctrl+V (paste) — period tasks excluded
+- Double-click cell → TaskModal; column header [+] → PeriodScheduleModal
 
 **Entry point flow:** `app/page.tsx` → `AppShell` (tab-based routing) → CalendarGrid / Dashboard / other views
 

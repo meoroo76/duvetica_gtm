@@ -87,3 +87,70 @@ const HOLIDAYS: Record<string, string> = {
 export function isHoliday(dateStr: string): string | null {
   return HOLIDAYS[dateStr] || null;
 }
+
+// --- 주차/월별 그룹핑 ---
+
+import { DateGroup } from '@/lib/types';
+
+/** 월요일 기준 ISO 주차 번호 */
+function getISOWeek(dateStr: string): number {
+  const d = new Date(dateStr);
+  const dayOfWeek = d.getDay() || 7; // 일요일=7
+  d.setDate(d.getDate() + 4 - dayOfWeek); // 해당 주의 목요일
+  const yearStart = new Date(d.getFullYear(), 0, 1);
+  return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+}
+
+/** "3월 4주차" 형태 라벨 */
+function getWeekLabel(dateStr: string): string {
+  const d = new Date(dateStr);
+  const month = d.getMonth() + 1;
+  // 해당 월에서 몇 번째 주인지 계산
+  const firstOfMonth = new Date(d.getFullYear(), d.getMonth(), 1);
+  const firstMonday = new Date(firstOfMonth);
+  const dayOfWeek = firstMonday.getDay() || 7;
+  if (dayOfWeek !== 1) firstMonday.setDate(firstMonday.getDate() + (8 - dayOfWeek));
+  const weekInMonth = d < firstMonday ? 1 : Math.ceil((d.getDate() - firstMonday.getDate() + firstMonday.getDate()) / 7);
+  const weekNum = Math.ceil(d.getDate() / 7);
+  return `${month}월 ${weekNum}주차`;
+}
+
+/** 날짜 배열을 월요일 기준 주 단위로 그룹핑 */
+export function groupDatesByWeek(dates: string[]): DateGroup[] {
+  if (dates.length === 0) return [];
+  const groups: DateGroup[] = [];
+  let currentGroup: DateGroup | null = null;
+
+  for (const date of dates) {
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const week = getISOWeek(date);
+    const key = `${year}-W${String(week).padStart(2, '0')}`;
+
+    if (!currentGroup || currentGroup.key !== key) {
+      currentGroup = { key, label: getWeekLabel(date), dates: [] };
+      groups.push(currentGroup);
+    }
+    currentGroup.dates.push(date);
+  }
+  return groups;
+}
+
+/** 날짜 배열을 월 단위로 그룹핑 */
+export function groupDatesByMonth(dates: string[]): DateGroup[] {
+  if (dates.length === 0) return [];
+  const groups: DateGroup[] = [];
+  let currentGroup: DateGroup | null = null;
+
+  for (const date of dates) {
+    const key = date.slice(0, 7); // "YYYY-MM"
+    if (!currentGroup || currentGroup.key !== key) {
+      const d = new Date(date);
+      const label = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}`;
+      currentGroup = { key, label, dates: [] };
+      groups.push(currentGroup);
+    }
+    currentGroup.dates.push(date);
+  }
+  return groups;
+}

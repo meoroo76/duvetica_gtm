@@ -1,19 +1,22 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useGTMStore } from '@/store/gtmStore';
-import { Department, DEPARTMENTS, DEPARTMENT_COLORS, STATUS_COLORS, Task, getSeasonStyle } from '@/lib/types';
+import { Department, DEPARTMENTS, DEPARTMENT_COLORS, STATUS_COLORS, Task, ViewMode, DateGroup, getSeasonStyle } from '@/lib/types';
 import {
   generateDateRange,
   getDayOfWeekKR,
   isWeekend,
   isToday,
   isHoliday,
+  groupDatesByWeek,
+  groupDatesByMonth,
 } from '@/lib/dateUtils';
 import TaskModal from './TaskModal';
 import PeriodScheduleModal from './PeriodScheduleModal';
 
 const ROW_HEIGHT = 32;
+const GROUP_ROW_HEIGHT = 48;
 const VISIBLE_BUFFER = 20;
 
 interface DragState {
@@ -71,6 +74,24 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
   const [seasonFilterOpen, setSeasonFilterOpen] = useState(false);
   const [filterDept, setFilterDept] = useState<'all' | Department>('all');
   const [filterStatus, setFilterStatus] = useState<'all' | Task['status']>('all');
+
+  // 뷰 모드: 일자 / 주차 / 월별
+  const [viewMode, setViewMode] = useState<ViewMode>('daily');
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+
+  const toggleGroup = useCallback((key: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  // 뷰 모드 변경 시 펼침 상태 초기화
+  useEffect(() => {
+    setExpandedGroups(new Set());
+  }, [viewMode]);
 
   // 시즌+부서별 검색어 필터 (키: "seasonId_dept")
   const [searchTerms, setSearchTerms] = useState<Record<string, string>>({});
@@ -472,7 +493,87 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
     );
   };
 
-  // 선택된 시즌만 표시 (selectedSeasons 배열 순서 = 표시 순서, 드래그로 변경 가능)
+  // --- 요약 셀 (주차/월별 모드용) ---
+  const renderSummaryCell = (dates: string[], seasonId: string, dept: Department) => {
+    // 해당 기간+시즌+부서의 모든 태스크 수집
+    const allTasks: Task[] = [];
+    const seen = new Set<string>();
+    for (const date of dates) {
+      const actualDate = getActualDate(date, seasonId);
+      const key = `${actualDate}_${seasonId}_${dept}`;
+      const cellTasks = taskMap.get(key) || [];
+      for (const t of cellTasks) {
+        if (!seen.has(t.id)) {
+          seen.add(t.id);
+          // 상태 필터 적용
+          if (filterStatus !== 'all' && t.status !== filterStatus) continue;
+          allTasks.push(t);
+        }
+      }
+    }
+
+    if (allTasks.length === 0) {
+      return (
+        <div className="flex-1 min-w-0 border-b border-r border-gray-100 flex items-center justify-center" style={{ height: GROUP_ROW_HEIGHT }}>
+          <span className="text-[10px] text-gray-300">-</span>
+        </div>
+      );
+    }
+
+    const regularTasks = allTasks.filter((t) => !t.endDate);
+    const periodTasks = allTasks.filter((t) => t.endDate);
+    const total = regularTasks.length;
+    const completed = regularTasks.filter((t) => t.status === 'completed').length;
+    const delayed = regularTasks.filter((t) => t.status === 'delayed').length;
+    const inProgress = regularTasks.filter((t) => t.status === 'in_progress').length;
+    const progressPct = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    // 주요 업무 내용 (최대 2개)
+    const topContents = regularTasks.slice(0, 2).map((t) => t.content);
+
+    return (
+      <div
+        className="flex-1 min-w-0 border-b border-r border-gray-100 px-1.5 py-1 cursor-default hover:bg-gray-50/50 transition-colors"
+        style={{ height: GROUP_ROW_HEIGHT }}
+        title={`${dept}: 총 ${total}건 (완료 ${completed}, 진행 ${inProgress}, 지연 ${delayed})${periodTasks.length > 0 ? ` + 기간일정 ${periodTasks.length}건` : ''}`}
+      >
+        {/* 상태 카운트 + 진���률 */}
+        <div className="flex items-center gap-1.5 mb-0.5">
+          <span className="text-[10px] font-semibold text-gray-700">{total}건</span>
+          {delayed > 0 && (
+            <span className="text-[9px] text-red-500 font-medium">지연{delayed}</span>
+          )}
+          {inProgress > 0 && (
+            <span className="text-[9px] text-blue-500">진행{inProgress}</span>
+          )}
+          {completed > 0 && (
+            <span className="text-[9px] text-green-500">완료{completed}</span>
+          )}
+          {periodTasks.length > 0 && (
+            <span className="text-[9px] text-purple-400">기간{periodTasks.length}</span>
+          )}
+        </div>
+        {/* 진행률 바 */}
+        {total > 0 && (
+          <div className="w-full h-1 bg-gray-200 rounded-full overflow-hidden mb-0.5">
+            <div
+              className="h-full rounded-full transition-all"
+              style={{
+                width: `${progressPct}%`,
+                backgroundColor: progressPct === 100 ? '#10B981' : delayed > 0 ? '#F59E0B' : '#3B82F6',
+              }}
+            />
+          </div>
+        )}
+        {/* 주요 내용 */}
+        <div className="text-[9px] text-gray-500 truncate leading-tight">
+          {topContents.join(' / ')}{total > 2 ? ` (+${total - 2})` : ''}
+        </div>
+      </div>
+    );
+  };
+
+  // 선택�� 시즌만 표시 (selectedSeasons 배열 순서 = 표시 순서, 드래��로 변경 가능)
   const visibleSeasons: string[] = selectedSeasons.filter((id) =>
     seasons.some((s) => s.id === id)
   );
@@ -571,17 +672,73 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
 
   // 가상 스크롤 계산 (검색 시 displayDates 사용)
   const scrollDates = hasAnySearch ? displayDates : allDates;
-  const startIdx = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - VISIBLE_BUFFER);
-  const endIdx = Math.min(
-    scrollDates.length,
-    Math.ceil((scrollTop + containerHeight) / ROW_HEIGHT) + VISIBLE_BUFFER
-  );
-  const renderedDates = scrollDates.slice(startIdx, endIdx);
-  const scrollTotalHeight = scrollDates.length * ROW_HEIGHT;
+
+  // --- 그룹 모드 행 계산 ---
+  type FlatRow = { type: 'date'; date: string } | { type: 'group'; group: DateGroup };
+
+  const dateGroups = useMemo(() => {
+    if (viewMode === 'daily') return null;
+    return viewMode === 'weekly' ? groupDatesByWeek(scrollDates) : groupDatesByMonth(scrollDates);
+  }, [viewMode, scrollDates]);
+
+  const flatRows = useMemo<FlatRow[]>(() => {
+    if (viewMode === 'daily' || !dateGroups) {
+      return scrollDates.map((d) => ({ type: 'date' as const, date: d }));
+    }
+    const rows: FlatRow[] = [];
+    for (const group of dateGroups) {
+      rows.push({ type: 'group', group });
+      if (expandedGroups.has(group.key)) {
+        for (const date of group.dates) {
+          rows.push({ type: 'date', date });
+        }
+      }
+    }
+    return rows;
+  }, [viewMode, dateGroups, scrollDates, expandedGroups]);
+
+  // 각 행의 높이와 누적 오프셋 계산
+  const rowOffsets = useMemo(() => {
+    const offsets: number[] = [];
+    let cumulative = 0;
+    for (const row of flatRows) {
+      offsets.push(cumulative);
+      cumulative += row.type === 'group' ? GROUP_ROW_HEIGHT : ROW_HEIGHT;
+    }
+    return { offsets, totalHeight: cumulative };
+  }, [flatRows]);
+
+  // 가상 스크롤: 가시 범위의 행 인덱스 계산
+  const { visibleStartIdx, visibleEndIdx } = useMemo(() => {
+    const { offsets, totalHeight } = rowOffsets;
+    const viewTop = scrollTop;
+    const viewBottom = scrollTop + containerHeight;
+
+    // 이진 탐색으로 시작 인덱스 찾기
+    let lo = 0, hi = offsets.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      const rowBottom = offsets[mid] + (flatRows[mid].type === 'group' ? GROUP_ROW_HEIGHT : ROW_HEIGHT);
+      if (rowBottom < viewTop) lo = mid + 1;
+      else hi = mid;
+    }
+    const startIdx = Math.max(0, lo - VISIBLE_BUFFER);
+
+    // 끝 인덱스
+    let endIdx = startIdx;
+    while (endIdx < offsets.length && offsets[endIdx] < viewBottom) endIdx++;
+    endIdx = Math.min(offsets.length, endIdx + VISIBLE_BUFFER);
+
+    return { visibleStartIdx: startIdx, visibleEndIdx: endIdx };
+  }, [scrollTop, containerHeight, rowOffsets, flatRows]);
+
+  const renderedRows = flatRows.slice(visibleStartIdx, visibleEndIdx);
+  const scrollTotalHeight = rowOffsets.totalHeight;
 
   // 화면 상단에 보이는 날짜의 년도
-  const topIdx = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT));
-  const topYear = scrollDates[topIdx]?.slice(0, 4) ?? '';
+  const topRow = flatRows[Math.max(0, visibleStartIdx)];
+  const topDate = topRow?.type === 'date' ? topRow.date : topRow?.type === 'group' ? topRow.group.dates[0] : '';
+  const topYear = topDate?.slice(0, 4) ?? '';
   useEffect(() => {
     onVisibleYearChange?.(topYear);
   }, [topYear, onVisibleYearChange]);
@@ -667,6 +824,23 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
             <option value="delayed">지연</option>
           </select>
         </div>
+        {/* 뷰 모드 토글 */}
+        <div className="flex items-center gap-0.5 bg-gray-100 rounded p-0.5">
+          {([['daily', '일자'], ['weekly', '주차'], ['monthly', '월별']] as const).map(([mode, label]) => (
+            <button
+              key={mode}
+              onClick={() => setViewMode(mode)}
+              className={`text-xs px-2.5 py-1 rounded transition-colors ${
+                viewMode === mode
+                  ? 'bg-gray-900 text-white shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         <button
           onClick={() => {
             const todayIndex = scrollDates.findIndex((d) => isToday(d));
@@ -727,7 +901,7 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
       {/* Header row */}
       <div className="flex border-b-2 border-gray-300 bg-gray-50 shrink-0">
         <div className="w-[100px] shrink-0 flex items-center justify-center text-xs font-bold text-gray-700 border-r border-gray-300 py-2">
-          {comparisonMode ? 'MM-DD' : '날짜'}
+          {comparisonMode ? 'MM-DD' : viewMode === 'daily' ? '날짜' : viewMode === 'weekly' ? '주차' : '월'}
         </div>
 
         {visibleSeasons.map((seasonId, idx) => {
@@ -841,12 +1015,90 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
           <div
             style={{
               position: 'absolute',
-              top: startIdx * ROW_HEIGHT,
+              top: rowOffsets.offsets[visibleStartIdx] ?? 0,
               left: 0,
               right: 0,
             }}
           >
-            {renderedDates.map((date) => {
+            {renderedRows.map((row, ri) => {
+              // --- 그룹 헤더 행 ---
+              if (row.type === 'group') {
+                const { group } = row;
+                const isExpanded = expandedGroups.has(group.key);
+                const dateRange = `${group.dates[0].slice(5)} ~ ${group.dates[group.dates.length - 1].slice(5)}`;
+                return (
+                  <div
+                    key={`group-${group.key}`}
+                    className="flex bg-gray-50 border-b-2 border-gray-200 hover:bg-gray-100 transition-colors"
+                    style={{ height: GROUP_ROW_HEIGHT }}
+                  >
+                    {/* 그룹 라벨 (좌측 날짜 컬럼) */}
+                    <div
+                      className="w-[100px] shrink-0 flex items-center gap-1 px-2 border-r border-gray-300 cursor-pointer select-none"
+                      onClick={() => toggleGroup(group.key)}
+                    >
+                      <svg
+                        className={`w-3 h-3 shrink-0 text-gray-500 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                        fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-semibold text-gray-700 truncate">{group.label}</div>
+                        <div className="text-[9px] text-gray-400 truncate">{dateRange}</div>
+                      </div>
+                    </div>
+
+                    {/* 시즌별 요약 셀 */}
+                    {visibleSeasons.map((seasonId, idx) => {
+                      const style = getSeasonStyle(seasonId);
+                      const isLast = idx === visibleSeasons.length - 1;
+                      return (
+                        <div
+                          key={seasonId}
+                          className={`flex flex-1 min-w-0 ${!isLast ? 'border-r-2' : ''}`}
+                          style={{ borderColor: style.color + '40' }}
+                        >
+                          {comparisonMode && (
+                            <div className="w-[52px] shrink-0 border-r border-gray-100" style={{ height: GROUP_ROW_HEIGHT }} />
+                          )}
+                          {/* 마일스톤 컬럼: 해당 기간에 걸친 마일스톤 이름들 */}
+                          <div
+                            className="w-[120px] shrink-0 border-r border-gray-100 flex items-center px-1"
+                            style={{ height: GROUP_ROW_HEIGHT }}
+                          >
+                            {(() => {
+                              const msNames = new Set<string>();
+                              for (const date of group.dates) {
+                                const actualDate = getActualDate(date, seasonId);
+                                const ms = milestones.find(
+                                  (m) => m.season === seasonId && actualDate >= m.startDate && actualDate <= m.endDate
+                                );
+                                if (ms) msNames.add(ms.name);
+                              }
+                              if (msNames.size === 0) return null;
+                              return (
+                                <span className="text-[9px] text-gray-500 truncate" title={[...msNames].join(', ')}>
+                                  {[...msNames].join(', ')}
+                                </span>
+                              );
+                            })()}
+                          </div>
+                          {/* 부서별 요약 */}
+                          {visibleDepts.map((dept) => (
+                            <React.Fragment key={dept}>
+                              {renderSummaryCell(group.dates, seasonId, dept)}
+                            </React.Fragment>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              }
+
+              // --- 일반 날짜 행 (기존 로직) ---
+              const date = row.date;
               const dayKR = getDayOfWeekKR(date);
               const weekend = isWeekend(date);
               const today = isToday(date);
@@ -865,7 +1117,7 @@ export default function CalendarGrid({ onVisibleYearChange }: CalendarGridProps)
                       : weekend
                       ? 'bg-gray-50/80'
                       : ''
-                  } ${isFirstOfMonth ? 'border-t-2 border-t-gray-400' : ''}`}
+                  } ${isFirstOfMonth && viewMode === 'daily' ? 'border-t-2 border-t-gray-400' : ''}`}
                   style={{ height: ROW_HEIGHT }}
                 >
                   {/* Date cell */}

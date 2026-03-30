@@ -24,6 +24,14 @@ export interface Task {
 
 export type Department = '기획' | '디자인' | '소재' | '소싱';
 
+export type ViewMode = 'daily' | 'weekly' | 'monthly';
+
+export interface DateGroup {
+  key: string;       // 고유 키 (e.g., "2026-W13", "2026-03")
+  label: string;     // 표시 라벨 (e.g., "3월 4주차", "2026.03")
+  dates: string[];   // 포함된 날짜 배열
+}
+
 export interface Milestone {
   id: string;
   name: string;
